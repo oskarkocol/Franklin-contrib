@@ -1,5 +1,29 @@
 # Changelog
 
+## Franklin Agent 3.20.1 — pull /surf-chat skill until BlockRun upstream is fixed
+
+End-to-end testing the v3.19.0 Surf integration surfaced an upstream
+bug specific to the chat surface: BlockRun's gateway proxies
+`/v1/surf/chat/completions` to `https://api.asksurf.ai/v1/chat/completions`,
+but Surf's actual chat endpoint lives at
+`https://api.asksurf.ai/gateway/v1/chat/completions` (confirmed in
+[Surf's official docs](https://docs.asksurf.ai/chat-completions)). The
+mismatch returns a 404 from Surf — no payment is charged, but the
+skill misleads the agent into thinking the surface works.
+
+The data endpoints are unaffected — `/surf-market`, `/surf-chain`, and
+`/surf-social` all settle cleanly. Only chat is broken upstream.
+
+Pulling the `/surf-chat` skill bundle in this patch so the agent
+doesn't advertise a surface that 404s. The BlockRun-side fix (drop the
+`upstreamBase` override on the chat catalog entry so it resolves
+through the standard `/gateway/v1` base) will land in a follow-up
+release once the gateway maintainer has finished investigating.
+
+`franklin skills` now lists 7 bundled skills (down from 8):
+`budget-grill`, `surf-market`, `surf-chain`, `surf-social`,
+`trade-signal`, `trade-strategy`, `trade-discussion`.
+
 ## Franklin Agent 3.20.0 — Journal v2 + non-outcome discipline scorer + 3 trading skills
 
 Franklin's trade log gains a rationale layer this release, and a scorer

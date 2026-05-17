@@ -318,9 +318,8 @@ On-chain affiliate (20 bps in sell-token, force-set server-side) flows to BlockR
 - \`/v1/surf/social/*\` — KOL/CT mindshare, smart-follower history, tweets, user profiles. The canonical source for crypto-Twitter signal.
 - \`/v1/surf/fund/{detail,portfolio,ranking}\` — VC fund profiles, portfolios, ranking.
 - \`/v1/surf/project/{detail,defi/metrics,defi/ranking}\` — project profiles + DeFi protocol metrics.
-- \`/v1/surf/chat/completions\` — surf-1.5 chat model with first-class citations (\`citation: ["source","chart"]\`). \$0.02/call flat.
 
-For Surf workflows, prefer the bundled skills (\`/surf-market\`, \`/surf-chain\`, \`/surf-social\`, \`/surf-chat\`) — they document which endpoint to pick for which question and the cost trade-off. Skipped (use the dedicated tools instead): \`/v1/surf/prediction-market/*\` (use \`PredictionMarket\`), \`/v1/surf/search/*\` (use \`ExaSearch\`), \`/v1/surf/web/*\` (use \`BrowserX\`).
+For Surf workflows, prefer the bundled skills (\`/surf-market\`, \`/surf-chain\`, \`/surf-social\`) — they document which endpoint to pick for which question and the cost trade-off. Skipped (use the dedicated tools instead): \`/v1/surf/prediction-market/*\` (use \`PredictionMarket\`), \`/v1/surf/search/*\` (use \`ExaSearch\`), \`/v1/surf/web/*\` (use \`BrowserX\`). \`/v1/surf/chat/completions\` (surf-1.5) is temporarily disabled in v3.20.1 — the BlockRun gateway's upstream path returns 404 from Surf; will be re-enabled in a follow-up release once the gateway side is fixed.
 
 **Generic gateway primitive**: \`BlockRun({ path, method, params, body })\` is a single capability that signs x402 and forwards to ANY path under \`/api\`. Use it for Surf endpoints (above) and any future BlockRun partner that doesn't have a dedicated capability yet. Always specify the exact path; the primitive will not guess.
 
