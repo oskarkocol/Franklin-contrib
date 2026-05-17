@@ -1,5 +1,66 @@
 # Changelog
 
+## Franklin Agent 3.20.0 — Journal v2 + non-outcome discipline scorer + 3 trading skills
+
+Franklin's trade log gains a rationale layer this release, and a scorer
+that rewards *how* trades are justified rather than whether they paid
+off. The shift is borrowed from agent-native trading research: scoring
+outcomes incentivizes curve-fitting and revenge-trading; scoring
+*verifiability + evidence + specificity + novelty + review* incentivizes
+the habits that compound over years.
+
+**Journal v2 schema.** `~/.blockrun/trades.jsonl` entries can now carry:
+
+- `rationale`: `direction`, `priceTarget`, `stopLoss`, `timeHorizon`,
+  `conviction` (1–5), `evidence[]`, `tags[]`, `thesis`
+- `review`: post-trade note left at close
+- `qualityScore`: 5 components plus a 0–5 total, computed at append time
+
+All fields are optional. Pre-v3.20 entries load cleanly with no
+qualityScore — the discipline footer skips them silently.
+
+**Discipline scorer** (`src/trading/journal-quality.ts`). Pure function,
+mirrors AI-Trader's `signal_quality.py` weighting:
+
+| Component | Weight | Earned by |
+|---|---|---|
+| verifiability | 30% | direction + priceTarget both set |
+| evidence | 25% | thesis length, evidence array, indicator keywords |
+| specificity | 20% | symbol + ≥ 2 tags |
+| novelty | 15% | not the 4th identical revenge-trade this week |
+| review | 10% | post-trade note |
+
+`TradingOpenPosition` accepts a `rationale` object; `TradingClosePosition`
+accepts a `review` string; both call the scorer and persist the score
+inline. `TradingPortfolio` now renders a discipline footer averaging
+the last 10 scored trades, with `←` flags on any component below 3/5.
+
+**Three new bundled skills** drive the LLM to fill the rationale fields:
+
+- `/trade-signal <symbol or thesis>` — open a position with a full
+  rationale. The skill walks the agent through gathering direction +
+  target + stop + horizon + evidence before calling `TradingOpenPosition`.
+- `/trade-strategy <topic>` — write a long-form strategy doc (entry
+  triggers, exit rules, sizing, kill criteria) to `~/.blockrun/notes/`.
+  No trade fires. Use before committing capital.
+- `/trade-discussion <topic>` — lightest of the three: 1–3 paragraphs
+  of market observation, tagged and saved to `~/.blockrun/notes/`. No
+  trade fires.
+
+`franklin skills` now lists 8 bundled skills (budget-grill + 4 surf-* +
+3 trade-*).
+
+**Borrowed from, not from.** The discipline mechanism is ported from
+HKUDS/AI-Trader's signal-quality model. The platform pieces of
+AI-Trader (heartbeat agent loop, copy-trading, public leaderboard,
+WebSocket notifications) are explicitly out of scope — Franklin is a
+single-user local agent, not a server, and those shapes don't apply.
+What translates is the *non-outcome* feedback principle: trade
+discipline compounds; P&L luck doesn't.
+
+Phase 2 of the skill system (user-local + project-local discovery from
+`~/.blockrun/skills/`) is still queued for a future release.
+
 ## Franklin Agent 3.19.0 — `BlockRun` primitive + Surf skills (Market / Chain / Social / Chat)
 
 The shape of how Franklin talks to BlockRun changes in this release.
