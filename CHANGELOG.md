@@ -1,5 +1,40 @@
 # Changelog
 
+## Franklin Agent 3.21.2 — VideoGen RealFace support + panel rebrand
+
+Aligns Franklin with two recent BlockRun gateway changes:
+
+**RealFace asset support in VideoGen** (matches BlockRun `b86d5e9`). The
+gateway's `/v1/videos/generations` route now accepts an optional
+`real_face_asset_id` body field for Seedance 2.0 variants — BytePlus
+RealFace seeds the first frame from a real-person asset for cross-frame
+character consistency. Users get asset IDs (format `ta_<alphanumeric>`)
+from token360's Asset UI after H5 verification.
+
+`VideoGen` adds the field as an optional input with full client-side
+validation:
+
+- Regex `^ta_[A-Za-z0-9]+$` (matches the gateway's validator)
+- Model gate — only `bytedance/seedance-2.0` and `bytedance/seedance-2.0-fast`;
+  1.5 Pro + non-Seedance models reject with a clear error
+- Mutual exclusion with `image_url` — both seed the first frame, so the
+  client refuses both at once with a "pick one" hint
+
+Client-side checks save an x402 round-trip; the gateway returns 400 on
+the same conditions anyway.
+
+**Panel rebrand: "Franklin" → "Franklin Agent"** (matches BlockRun
+`f69ffdb`). Two strings:
+
+- Sidebar `<h1>` in the panel: `Franklin` → `Franklin Agent`
+- Browser tab title: `Franklin Panel` → `Franklin Agent Panel`
+
+The big watermark behind the content stays "FRANKLIN" — it's a styled
+hero element and changing the word breaks its sizing. The terminal
+banner already says "Franklin Agent v3.X.X" (since the v3.8.17 brand
+refresh), so the visible branding is now consistent across both
+surfaces.
+
 ## Franklin Agent 3.21.1 — fix: typed Phone + Voice tools now report cost
 
 PR #58 (v3.20.2) shipped the typed Phone + Voice tools (\`VoiceCall\`,

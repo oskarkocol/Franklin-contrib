@@ -11,7 +11,7 @@ export function getHTML(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Franklin Panel</title>
+<title>Franklin Agent Panel</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='30' y='20' width='55' height='60' rx='14' stroke='white' stroke-width='8' fill='none'/%3E%3Cpath d='M15 35 L25 35' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M10 50 L25 50' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M15 65 L25 65' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -490,7 +490,7 @@ a:hover { text-decoration:underline; }
   <div class="sidebar-header">
     <div class="sidebar-brand">
       <div class="icon"><img src="/assets/franklin-portrait.jpg" alt="F"></div>
-      <h1>Franklin</h1>
+      <h1>Franklin Agent</h1>
     </div>
     <div class="sidebar-sub">by <span style="color:var(--success)">BlockRun.ai</span></div>
     <div class="sidebar-status">
