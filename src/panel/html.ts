@@ -518,6 +518,10 @@ a:hover { text-decoration:underline; }
       Phone
       <span class="nav-badge" id="phone-nav-badge" style="display:none"></span>
     </button>
+    <button class="nav-item" data-tab="calls">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4"/><path d="M7 8v8"/><path d="M11 5v14"/><path d="M15 8v8"/><path d="M19 10v4"/></svg>
+      Calls
+    </button>
     <button class="nav-item" data-tab="sessions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       Sessions
@@ -776,6 +780,27 @@ a:hover { text-decoration:underline; }
         <input id="phone-buy-areacode" placeholder="Area code (opt)" maxlength="6" />
         <button class="btn btn-warn" id="phone-buy-btn">Buy for $5</button>
         <span class="phone-status" id="phone-buy-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calls -->
+  <div class="tab" id="tab-calls">
+    <div class="content-header">
+      <h2>Calls</h2>
+      <p>Recent outbound voice calls fired through VoiceCall. Reads from ~/.blockrun/calls.jsonl &mdash; the journal Franklin keeps locally as it polls call status.</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <h3 style="margin:0">Recent calls</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="phone-status" id="calls-list-status"></span>
+          <button class="btn btn-ghost" id="calls-refresh-btn" title="Reload from journal">Refresh</button>
+        </div>
+      </div>
+      <div id="calls-list" style="margin-top:12px">
+        <div class="phone-empty">Loading&hellip;</div>
       </div>
     </div>
   </div>
@@ -1947,6 +1972,96 @@ document.getElementById('phone-buy-btn')?.addEventListener('click', buyPhoneNumb
 // Prime the nav badge so an expiring number is visible even before the user
 // clicks into the Phone tab. Cached read — no network cost.
 loadPhone({});
+
+// ─── Calls tab ──────────────────────────────────────────────────────────
+// Read-only view of ~/.blockrun/calls.jsonl. VoiceCall and VoiceStatus tools
+// write to that journal; this tab just reads.
+
+function formatCallStatus(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'completed') return { label: 'completed', cls: 'green' };
+  if (s === 'queued' || s === 'in_progress' || s === 'in-progress') return { label: s.replace('_',' '), cls: 'amber' };
+  return { label: s || 'unknown', cls: 'red' };
+}
+
+function formatDuration(sec) {
+  if (!sec || typeof sec !== 'number') return '—';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? m + 'm ' + s + 's' : s + 's';
+}
+
+function renderCallsList(calls) {
+  const list = document.getElementById('calls-list');
+  if (!list) return;
+  if (!calls || calls.length === 0) {
+    list.innerHTML = '<div class="phone-empty">' +
+      '<strong>No calls yet</strong>' +
+      'Outbound voice calls fired via the <code>VoiceCall</code> tool or the <code>/phone-call</code> skill ' +
+      'will appear here. Each call costs $0.54 and requires a wallet-owned BlockRun phone number as caller ID.' +
+      '</div>';
+    return;
+  }
+  const html = calls.map(c => {
+    const st = formatCallStatus(c.status);
+    const human = formatPhoneNumber(c.to);
+    const fromHuman = formatPhoneNumber(c.from);
+    const when = new Date(c.timestamp).toLocaleString();
+    const cost = c.paid_usd ? '$' + c.paid_usd.toFixed(2) : '—';
+    const safeTask = (c.task || '').replace(/[<>&]/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[ch]));
+    const transcriptHtml = c.transcript
+      ? '<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--text-dim);font-size:12px">Transcript</summary><pre style="white-space:pre-wrap;background:oklch(0 0 0 / 25%);padding:10px;border-radius:8px;font-size:12px;margin-top:6px;max-height:400px;overflow:auto">' +
+        c.transcript.replace(/[<>&]/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[ch])) + '</pre></details>'
+      : '';
+    const recordingHtml = c.recording_url
+      ? '<a href="' + c.recording_url + '" target="_blank" rel="noopener" style="font-size:11px;color:var(--brand);text-decoration:none;margin-left:8px">▶ recording</a>'
+      : '';
+    return ''
+      + '<div class="phone-row" style="grid-template-columns:auto 1fr auto;align-items:start">'
+      + '  <div class="phone-icon-bubble">'
+      + '    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      + '      <path d="M3 10v4"/><path d="M7 8v8"/><path d="M11 5v14"/><path d="M15 8v8"/><path d="M19 10v4"/>'
+      + '    </svg>'
+      + '  </div>'
+      + '  <div class="phone-main">'
+      + '    <div class="phone-num">' + human + ' <span style="font-size:11px;color:var(--text-dim);font-weight:400">from ' + fromHuman + '</span></div>'
+      + '    <div class="phone-meta">'
+      + '      <span class="chip ' + st.cls + '">' + st.label + '</span>'
+      + '      <span class="chip">' + formatDuration(c.duration_sec) + '</span>'
+      + '      <span class="chip">' + cost + '</span>'
+      + '      <span style="font-size:11px;color:var(--text-dim)">' + when + '</span>'
+      + recordingHtml
+      + '    </div>'
+      + '    <div style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.5">' + (safeTask.slice(0, 200) + (safeTask.length > 200 ? '…' : '')) + '</div>'
+      + transcriptHtml
+      + '  </div>'
+      + '</div>';
+  }).join('');
+  list.innerHTML = html;
+}
+
+async function loadCalls() {
+  const statusEl = document.getElementById('calls-list-status');
+  if (statusEl) { statusEl.textContent = 'Loading…'; statusEl.className = 'phone-status'; }
+  try {
+    const r = await fetch('/api/calls?limit=50');
+    const data = await r.json();
+    if (!r.ok) {
+      if (statusEl) { statusEl.textContent = data.error || 'Failed to load'; statusEl.className = 'phone-status err'; }
+      return;
+    }
+    renderCallsList(data.calls || []);
+    if (statusEl) {
+      statusEl.className = 'phone-status';
+      statusEl.textContent = data.count + ' call' + (data.count === 1 ? '' : 's');
+    }
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = 'Network error'; statusEl.className = 'phone-status err'; }
+  }
+}
+
+document.querySelector('[data-tab="calls"]')?.addEventListener('click', loadCalls);
+document.getElementById('calls-refresh-btn')?.addEventListener('click', loadCalls);
 
 loadOverview();
 loadSessions();

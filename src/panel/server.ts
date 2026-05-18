@@ -571,6 +571,43 @@ export function createPanelServer(port: number): http.Server {
         return;
       }
 
+      // ─── Calls (voice call journal) ─────────────────────────────────────
+      // Read-only views of ~/.blockrun/calls.jsonl. VoiceCall and VoiceStatus
+      // tools write to that journal; this endpoint just summarizes it for the
+      // panel "Calls" tab. No x402, no wallet-mutating action — same loopback
+      // posture as the rest of the panel anyway since the journal can contain
+      // call transcripts and recipient numbers.
+
+      if (p === '/api/calls' && (!req.method || req.method === 'GET')) {
+        if (!isLocalPanelRequest(req)) { json(res, { error: 'forbidden', calls: [] }, 403); return; }
+        try {
+          const { CallLog } = await import('../phone/call-log.js');
+          const log = new CallLog();
+          const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 200);
+          const calls = log.summary(limit);
+          json(res, { calls, count: calls.length });
+        } catch (err) {
+          json(res, { error: (err as Error).message, calls: [] }, 500);
+        }
+        return;
+      }
+
+      if (p.startsWith('/api/calls/') && (!req.method || req.method === 'GET')) {
+        if (!isLocalPanelRequest(req)) { json(res, { error: 'forbidden' }, 403); return; }
+        try {
+          const callId = decodeURIComponent(p.slice('/api/calls/'.length));
+          if (!callId) { json(res, { error: 'call_id required' }, 400); return; }
+          const { CallLog } = await import('../phone/call-log.js');
+          const log = new CallLog();
+          const entry = log.byCallId(callId);
+          if (!entry) { json(res, { error: 'not found', call_id: callId }, 404); return; }
+          json(res, entry);
+        } catch (err) {
+          json(res, { error: (err as Error).message }, 500);
+        }
+        return;
+      }
+
       if (p === '/api/markets') {
         // Snapshot of every active data provider for the Markets panel:
         // pipeline wiring (which endpoint serves which asset class), live

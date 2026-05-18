@@ -9521,3 +9521,100 @@ test('journal-display: renderDisciplineFooter flags components below 3.0', async
   const unscoredOnly = { timestamp: 0, symbol: 'X', side: 'buy', qty: 1, priceUsd: 1, feeUsd: 0, realizedPnlUsd: 0 };
   assert.equal(renderDisciplineFooter([unscoredOnly]), null);
 });
+
+// ─── voice call journal (CallLog) ─────────────────────────────────────────
+// Persistence layer for outbound calls fired through VoiceCall / VoiceStatus.
+// Append-only with multiple rows per call_id so concurrent status polls don't
+// race. summary() picks the latest row per call_id.
+
+test('CallLog: append + read round-trip preserves all fields', async () => {
+  const { CallLog } = await import('../dist/phone/call-log.js');
+  const tmpFile = join(mkdtempSync(join(tmpdir(), 'franklin-calls-')), 'calls.jsonl');
+  const log = new CallLog(tmpFile);
+
+  log.append({
+    timestamp: 1_700_000_000_000,
+    call_id: 'call_abc',
+    to: '+14155552671',
+    from: '+15707043521',
+    task: 'Greet the recipient and confirm Thursday 3pm.',
+    voice: 'maya',
+    max_duration_min: 5,
+    language: 'en-US',
+    status: 'queued',
+    paid_usd: 0.54,
+    tx_hash: '0xdead',
+  });
+
+  const all = log.all();
+  assert.equal(all.length, 1, 'one row written');
+  assert.equal(all[0].call_id, 'call_abc');
+  assert.equal(all[0].task, 'Greet the recipient and confirm Thursday 3pm.');
+  assert.equal(all[0].paid_usd, 0.54);
+  assert.equal(all[0].tx_hash, '0xdead');
+});
+
+test('CallLog: summary picks latest row per call_id (status updates win)', async () => {
+  const { CallLog } = await import('../dist/phone/call-log.js');
+  const tmpFile = join(mkdtempSync(join(tmpdir(), 'franklin-calls-')), 'calls.jsonl');
+  const log = new CallLog(tmpFile);
+
+  log.append({ timestamp: 1, call_id: 'c1', to: '+14155550001', from: '+15705550001', task: 'Hello world from row one.', status: 'queued', paid_usd: 0.54 });
+  log.append({ timestamp: 2, call_id: 'c1', to: '+14155550001', from: '+15705550001', task: 'Hello world from row one.', status: 'in_progress', paid_usd: 0 });
+  log.append({ timestamp: 3, call_id: 'c1', to: '+14155550001', from: '+15705550001', task: 'Hello world from row one.', status: 'completed', duration_sec: 73, transcript: 'Hi! How are you?', paid_usd: 0 });
+  log.append({ timestamp: 4, call_id: 'c2', to: '+14155550002', from: '+15705550001', task: 'Different call entry.', status: 'queued', paid_usd: 0.54 });
+
+  const sum = log.summary();
+  assert.equal(sum.length, 2, 'one row per call_id');
+  // Newest-first: c2 (ts=4) before c1's latest (ts=3)
+  assert.equal(sum[0].call_id, 'c2');
+  assert.equal(sum[1].call_id, 'c1');
+  // c1's latest should be the completed row
+  assert.equal(sum[1].status, 'completed');
+  assert.equal(sum[1].duration_sec, 73);
+  assert.equal(sum[1].transcript, 'Hi! How are you?');
+});
+
+test('CallLog: byCallId returns latest matching row, null if missing', async () => {
+  const { CallLog } = await import('../dist/phone/call-log.js');
+  const tmpFile = join(mkdtempSync(join(tmpdir(), 'franklin-calls-')), 'calls.jsonl');
+  const log = new CallLog(tmpFile);
+
+  log.append({ timestamp: 1, call_id: 'xyz', to: '+14155550003', from: '+15705550001', task: 'Initial probe call.', status: 'queued', paid_usd: 0.54 });
+  log.append({ timestamp: 2, call_id: 'xyz', to: '+14155550003', from: '+15705550001', task: 'Initial probe call.', status: 'failed', paid_usd: 0 });
+
+  const found = log.byCallId('xyz');
+  assert.ok(found, 'found');
+  assert.equal(found.status, 'failed', 'latest row wins');
+  assert.equal(log.byCallId('nonexistent'), null, 'unknown call_id → null');
+});
+
+test('CallLog: missing-required-field rows are dropped on read', async () => {
+  const { CallLog } = await import('../dist/phone/call-log.js');
+  const dir = mkdtempSync(join(tmpdir(), 'franklin-calls-'));
+  const tmpFile = join(dir, 'calls.jsonl');
+  // Manually write a mix of valid and invalid rows.
+  const valid = JSON.stringify({ timestamp: 1, call_id: 'ok', to: '+14155550004', from: '+15705550001', task: 'Valid entry with all required fields.', status: 'completed', paid_usd: 0.54 });
+  const missingTo = JSON.stringify({ timestamp: 2, call_id: 'bad1', from: '+15705550001', task: 'Missing the to field.', status: 'queued', paid_usd: 0.54 });
+  const wrongType = JSON.stringify({ timestamp: 'not-a-number', call_id: 'bad2', to: '+1', from: '+1', task: 'Bad ts type.', status: 'queued', paid_usd: 0.54 });
+  writeFileSync(tmpFile, [valid, missingTo, wrongType, 'not-json-at-all'].join('\n') + '\n');
+
+  const log = new CallLog(tmpFile);
+  const all = log.all();
+  assert.equal(all.length, 1, 'only the valid row survives');
+  assert.equal(all[0].call_id, 'ok');
+});
+
+test('isTerminalStatus: terminal vs polling states', async () => {
+  const { isTerminalStatus } = await import('../dist/phone/call-log.js');
+  assert.equal(isTerminalStatus('completed'), true);
+  assert.equal(isTerminalStatus('failed'), true);
+  assert.equal(isTerminalStatus('cancelled'), true);
+  assert.equal(isTerminalStatus('busy'), true);
+  assert.equal(isTerminalStatus('no-answer'), true);
+  assert.equal(isTerminalStatus('voicemail'), true);
+  assert.equal(isTerminalStatus('queued'), false);
+  assert.equal(isTerminalStatus('in_progress'), false);
+  assert.equal(isTerminalStatus(null), false);
+  assert.equal(isTerminalStatus(''), false);
+});

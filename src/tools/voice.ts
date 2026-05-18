@@ -28,6 +28,33 @@ import {
 import type { CapabilityHandler, CapabilityResult, ExecutionScope } from '../agent/types.js';
 import { loadChain, API_URLS, VERSION } from '../config.js';
 import { logger } from '../logger.js';
+import { CallLog, type CallStatus } from '../phone/call-log.js';
+
+/** Singleton, lazy — paths are computed at first use so tests can stub homedir. */
+let _callLog: CallLog | null = null;
+function callLog(): CallLog {
+  if (!_callLog) _callLog = new CallLog();
+  return _callLog;
+}
+
+/**
+ * Normalize whatever string Bland.ai returns as `status` (or `disposition` /
+ * `call_state` — the field name has drifted across upstream versions) into
+ * the CallStatus union our journal stores. Unknown / missing → 'queued' so
+ * the row still gets written and a later poll can refine it.
+ */
+function normalizeStatus(raw: unknown): CallStatus {
+  if (typeof raw !== 'string') return 'queued';
+  const s = raw.toLowerCase().trim();
+  if (s === 'completed') return 'completed';
+  if (s === 'failed' || s === 'error') return 'failed';
+  if (s === 'cancelled' || s === 'canceled') return 'cancelled';
+  if (s === 'busy') return 'busy';
+  if (s === 'no-answer' || s === 'no_answer' || s === 'noanswer') return 'no-answer';
+  if (s === 'voicemail') return 'voicemail';
+  if (s === 'in-progress' || s === 'in_progress' || s === 'inprogress' || s === 'ringing') return 'in_progress';
+  return 'queued';
+}
 
 const VOICE_TIMEOUT_MS = 30_000;
 
@@ -261,6 +288,25 @@ export const voiceCallCapability: CapabilityHandler = {
     try {
       const res = await postWithPayment<Record<string, unknown>>('/v1/voice/call', body, ctx);
       const callId = (res.call_id || res.id) as string | undefined;
+      // Persist a "queued" row so the panel sees the call before VoiceStatus polls.
+      // Best-effort — if disk write fails we still surface the call_id to the agent.
+      if (callId) {
+        try {
+          callLog().append({
+            timestamp: Date.now(),
+            call_id: callId,
+            to: String(input.to),
+            from: String(input.from),
+            task: String(input.task),
+            voice: typeof input.voice === 'string' ? input.voice : undefined,
+            max_duration_min: typeof input.max_duration === 'number' ? input.max_duration : undefined,
+            language: typeof input.language === 'string' ? input.language : undefined,
+            status: normalizeStatus(res.status),
+            paid_usd: 0.54,
+            tx_hash: typeof res.tx_hash === 'string' ? res.tx_hash : undefined,
+          });
+        } catch { /* best-effort */ }
+      }
       return {
         output:
           `## Voice call initiated ($0.54 USDC charged)\n\n` +
@@ -304,6 +350,33 @@ export const voiceStatusCapability: CapabilityHandler = {
         `/v1/voice/call/${encodeURIComponent(input.call_id)}`,
         ctx,
       );
+      // Patch the local journal with whatever fields the gateway returned —
+      // transcript / recording / duration / disposition. Append-only schema
+      // means we just write a new row; CallLog.summary() picks the latest.
+      try {
+        const prior = callLog().byCallId(input.call_id);
+        if (prior) {
+          const recording =
+            typeof res.recording_url === 'string' ? res.recording_url :
+            typeof res.recording === 'string' ? res.recording : undefined;
+          const duration =
+            typeof res.call_length === 'number' ? Math.round(res.call_length) :
+            typeof res.duration === 'number' ? Math.round(res.duration) :
+            typeof res.duration_sec === 'number' ? Math.round(res.duration_sec) : undefined;
+          const transcript =
+            typeof res.concatenated_transcript === 'string' ? res.concatenated_transcript :
+            typeof res.transcript === 'string' ? res.transcript : undefined;
+          callLog().append({
+            ...prior,
+            timestamp: Date.now(),
+            paid_usd: 0,           // status polls are free; only the initial POST charges
+            status: normalizeStatus(res.status ?? res.queue_status ?? res.disposition),
+            duration_sec: duration ?? prior.duration_sec,
+            transcript: transcript ?? prior.transcript,
+            recording_url: recording ?? prior.recording_url,
+          });
+        }
+      } catch { /* best-effort */ }
       return {
         output:
           `## Voice call status\n\n` +

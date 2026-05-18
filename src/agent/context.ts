@@ -308,6 +308,14 @@ On-chain affiliate (20 bps in sell-token, force-set server-side) flows to BlockR
 - \`/v1/modal/{...path}\` — Modal GPU sandbox passthrough (create/exec/etc.).
 - \`/v1/pm/{...path}\` — prediction-market data passthrough.
 
+**Phone & Voice (typed tools — prefer these over raw primitive calls)**
+- \`ListPhoneNumbers\` (\$0.001) / \`BuyPhoneNumber\` (\$5, 30-day lease) / \`RenewPhoneNumber\` (\$5) / \`ReleasePhoneNumber\` (free) — lifecycle of wallet-owned BlockRun numbers.
+- \`PhoneLookup\` (\$0.01) / \`PhoneFraudCheck\` (\$0.05) — carrier + risk lookup.
+- \`VoiceCall\` (\$0.54, POST /v1/voice/call) — place an outbound AI-driven call. Async — returns \`call_id\` immediately.
+- \`VoiceStatus\` (free, GET /v1/voice/call/{id}) — poll a previously-initiated call for status / transcript / recording / disposition.
+- For end-to-end voice workflows including auto-poll, confirmation gates, and compliance reminders, prefer the bundled **\`/phone-call\`** skill — it walks through intent capture, caller-ID selection, task scripting, confirmation, and the polling loop. Calls auto-journal to ~/.blockrun/calls.jsonl (visible in the panel "Calls" tab).
+- US/CA destinations only. Marketing/sales calls require prior express consent (TCPA).
+
 **Surf — crypto data + chat (x402-paid)** via the generic \`BlockRun\` capability. ~55 curated endpoints. Tier-1 $0.001, Tier-2 $0.005, Tier-3 / chat $0.02.
 - \`/v1/surf/exchange/*\` — CEX trading pairs, prices, perps, depth, klines, funding history, long/short ratio.
 - \`/v1/surf/market/*\` — token rankings, fear/greed, futures, ETF flows, options skew, liquidations, on-chain indicators (NUPL/SOPR/MVRV), price indicators (RSI/MACD/BBANDS).
