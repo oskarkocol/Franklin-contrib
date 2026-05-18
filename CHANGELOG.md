@@ -1,5 +1,54 @@
 # Changelog
 
+## Franklin Agent 3.20.2 — Surf chat residue cleanup + typed Phone/Voice tools
+
+Two converging cleanups:
+
+**Typed Phone + Voice tools landed via PR #58** (from external contributor
+Killer Queen). Phone and voice endpoints were previously only reachable
+via the generic \`BlockRun\` primitive, which meant the agent had to know
+to POST \`/v1/phone/numbers/list\` or \`/v1/voice/call\` by string and
+hand-craft the body. In practice Opus and similar models would refuse
+because no tool's name pattern-matched user intent like "make a phone
+call" or "buy a phone number" — and discovery via \`.well-known/x402\`
+currently omits phone/voice. Combined with the agent loop's
+microCompact clearing prior \`tool_result\`s, models could even retract
+true earlier responses.
+
+PR #58 adds 8 typed tools wrapping the same endpoints, named to match
+intent — same pattern as ImageGen / VideoGen / ExaSearch:
+
+| Tool | Cost | Endpoint |
+|---|---|---|
+| \`ListPhoneNumbers\` | $0.001 | POST /v1/phone/numbers/list |
+| \`BuyPhoneNumber\` | $5 | POST /v1/phone/numbers/buy |
+| \`RenewPhoneNumber\` | $5 | POST /v1/phone/numbers/renew |
+| \`ReleasePhoneNumber\` | free | POST /v1/phone/numbers/release |
+| \`PhoneLookup\` | $0.01 | POST /v1/phone/lookup |
+| \`PhoneFraudCheck\` | $0.05 | POST /v1/phone/lookup/fraud |
+| \`VoiceCall\` | $0.54 | POST /v1/voice/call (Bland.ai) |
+| \`VoiceStatus\` | free | GET /v1/voice/call/{id} |
+
+Each \`spec.description\` spells out cost, use case, required fields, and
+the buy-number-first requirement for \`VoiceCall\`.
+
+**Surf chat residue swept**. BlockRun deployed the permanent removal of
+\`/v1/surf/chat/completions\` from gateway production — registry, route,
+MCP tool, marketplace listing, llms.txt, all gone, pending an upstream
+redesign around per-token billing. Franklin's v3.20.1 patch framed the
+removal as "temporarily disabled, will be re-enabled in a follow-up
+release once the gateway side is fixed" — that framing is now wrong.
+Cleaned up:
+
+- \`src/agent/context.ts\`: chat-removal note reframed as permanent ("not currently exposed by the BlockRun gateway, removed from the registry pending an upstream redesign").
+- \`src/tools/blockrun.ts\`: dropped "chat" from the Surf bullet and the stale \`/surf-chat\` skill reference in the tool description. Added pointer to the new typed Phone + Voice tools so the LLM picks them over raw primitive calls.
+
+The data endpoints (\`/v1/surf/{market,onchain,wallet,social,fund,project,…}\`) are unchanged and still settle cleanly. Only the chat surface is held back upstream.
+
+\`franklin skills\` lists 7 bundled skills (unchanged from v3.20.1). The
+phone-call orchestration **skill** with auto-polling, journal, and panel
+"Calls" tab is queued for v3.21.0.
+
 ## Franklin Agent 3.20.1 — pull /surf-chat skill until BlockRun upstream is fixed
 
 End-to-end testing the v3.19.0 Surf integration surfaced an upstream

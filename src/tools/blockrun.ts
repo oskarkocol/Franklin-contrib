@@ -238,10 +238,10 @@ export const blockrunCapability: CapabilityHandler = {
     name: 'BlockRun',
     description:
       'Call any BlockRun gateway endpoint. Signs an x402 USDC payment from the user wallet, retries on HTTP 402, and returns the response. ' +
-      'Use this for crypto data (Surf — markets, on-chain, social, chat), AI inference (chat / image / video / music), phone numbers and voice calls, ' +
-      'prediction markets, DeFi data, and any other API exposed under https://blockrun.ai/marketplace. ' +
+      'Use this for crypto data (Surf — markets, on-chain, social), AI inference (chat / image / video / music), prediction markets, DeFi data, and any other API exposed under https://blockrun.ai/marketplace. ' +
+      'For phone and voice, prefer the typed tools (ListPhoneNumbers, BuyPhoneNumber, RenewPhoneNumber, ReleasePhoneNumber, PhoneLookup, PhoneFraudCheck, VoiceCall, VoiceStatus) — they spell out cost, required fields, and the buy-number-first requirement. ' +
       'The path must start with "/v1/" or "/.well-known/". ' +
-      'Bundled skills like /surf-market, /surf-chain, /surf-social, /surf-chat document which endpoints to call for common workflows — read those when you are unsure which path serves the user\'s question. ' +
+      'Bundled skills like /surf-market, /surf-chain, /surf-social document which endpoints to call for common workflows — read those when you are unsure which path serves the user\'s question. ' +
       'Cost is wallet-charged automatically; the response includes the actual USD paid.',
     input_schema: {
       type: 'object',
