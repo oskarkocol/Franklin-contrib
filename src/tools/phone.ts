@@ -25,16 +25,31 @@ import {
 import type { CapabilityHandler, CapabilityResult, ExecutionScope } from '../agent/types.js';
 import { loadChain, API_URLS, VERSION } from '../config.js';
 import { logger } from '../logger.js';
+import { recordUsage } from '../stats/tracker.js';
 
 const PHONE_TIMEOUT_MS = 30_000;
 
 // ─── Shared payment flow (POST) ───────────────────────────────────────────
+//
+// Records cost telemetry to franklin-stats.json on success — so the status
+// bar's per-turn spend reflects the real $0.001/$0.05/$5 charges from the
+// gateway, not just the LLM call that triggered the tool. recordUsage is a
+// no-op on failure (no charge → nothing to record).
+
+interface PaidCallMeta {
+  /** Tool name shown in the status bar / audit tab (e.g. "BuyPhoneNumber"). */
+  tool: string;
+  /** USD amount the gateway charges on success. 0 for free routes. */
+  priceUsd: number;
+}
 
 async function postWithPayment<T>(
   path: string,
   body: unknown,
   ctx: ExecutionScope,
+  meta: PaidCallMeta,
 ): Promise<T> {
+  const startMs = Date.now();
   const chain = loadChain();
   const apiUrl = API_URLS[chain];
   const endpoint = `${apiUrl}${path}`;
@@ -72,7 +87,11 @@ async function postWithPayment<T>(
       const errText = await response.text().catch(() => '');
       throw new Error(`Phone ${path} failed (${response.status}): ${errText.slice(0, 300)}`);
     }
-    return (await response.json()) as T;
+    const data = (await response.json()) as T;
+    try {
+      recordUsage(meta.tool, 0, 0, meta.priceUsd, Date.now() - startMs);
+    } catch { /* telemetry best-effort */ }
+    return data;
   } finally {
     clearTimeout(timeout);
     ctx.abortSignal.removeEventListener('abort', onAbort);
@@ -158,7 +177,9 @@ export const listPhoneNumbersCapability: CapabilityHandler = {
   },
   execute: async (_input, ctx): Promise<CapabilityResult> => {
     try {
-      const res = await postWithPayment<Record<string, unknown>>('/v1/phone/numbers/list', {}, ctx);
+      const res = await postWithPayment<Record<string, unknown>>(
+        '/v1/phone/numbers/list', {}, ctx, { tool: 'ListPhoneNumbers', priceUsd: 0.001 },
+      );
       return {
         output:
           `## Phone numbers (wallet-owned)\n\n` +
@@ -191,7 +212,9 @@ export const buyPhoneNumberCapability: CapabilityHandler = {
     if (typeof input.country === 'string') body.country = input.country;
     if (typeof input.area_code === 'string') body.areaCode = input.area_code;
     try {
-      const res = await postWithPayment<Record<string, unknown>>('/v1/phone/numbers/buy', body, ctx);
+      const res = await postWithPayment<Record<string, unknown>>(
+        '/v1/phone/numbers/buy', body, ctx, { tool: 'BuyPhoneNumber', priceUsd: 5.0 },
+      );
       return {
         output:
           `## Number provisioned ($5 USDC charged)\n\n` +
@@ -227,6 +250,7 @@ export const renewPhoneNumberCapability: CapabilityHandler = {
         '/v1/phone/numbers/renew',
         { phoneNumber: input.phone_number },
         ctx,
+        { tool: 'RenewPhoneNumber', priceUsd: 5.0 },
       );
       return {
         output:
@@ -263,6 +287,7 @@ export const releasePhoneNumberCapability: CapabilityHandler = {
         '/v1/phone/numbers/release',
         { phoneNumber: input.phone_number },
         ctx,
+        { tool: 'ReleasePhoneNumber', priceUsd: 0 },
       );
       return {
         output:
@@ -300,6 +325,7 @@ export const phoneLookupCapability: CapabilityHandler = {
         '/v1/phone/lookup',
         { phoneNumber: input.phone_number },
         ctx,
+        { tool: 'PhoneLookup', priceUsd: 0.01 },
       );
       return {
         output:
@@ -336,6 +362,7 @@ export const phoneFraudCheckCapability: CapabilityHandler = {
         '/v1/phone/lookup/fraud',
         { phoneNumber: input.phone_number },
         ctx,
+        { tool: 'PhoneFraudCheck', priceUsd: 0.05 },
       );
       return {
         output:

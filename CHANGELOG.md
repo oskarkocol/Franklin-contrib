@@ -1,5 +1,101 @@
 # Changelog
 
+## Franklin Agent 3.21.1 — fix: typed Phone + Voice tools now report cost
+
+PR #58 (v3.20.2) shipped the typed Phone + Voice tools (\`VoiceCall\`,
+\`BuyPhoneNumber\`, \`ListPhoneNumbers\`, etc.) without wiring
+\`recordUsage()\` telemetry. Real-world repro after v3.21.0 shipped:
+firing \`VoiceCall\` for a \$0.54 outbound call settled the x402
+payment on-chain correctly, but the status bar at the bottom of the
+agent only showed the LLM cost (\`-\$0.0039\`) — the \$0.54 never
+landed in \`franklin-stats.json\` and the per-turn delta lied about
+true spend.
+
+Thread \`{ tool, priceUsd }\` through \`postWithPayment\` /
+\`getNoPayment\` in both \`src/tools/phone.ts\` and \`src/tools/voice.ts\`,
+call \`recordUsage(tool, 0, 0, priceUsd, latencyMs)\` on every
+successful response. Cost table baked in:
+
+| Tool | Price reported |
+|---|---|
+| \`ListPhoneNumbers\` | \$0.001 |
+| \`BuyPhoneNumber\` | \$5.00 |
+| \`RenewPhoneNumber\` | \$5.00 |
+| \`ReleasePhoneNumber\` | free |
+| \`PhoneLookup\` | \$0.01 |
+| \`PhoneFraudCheck\` | \$0.05 |
+| \`VoiceCall\` | \$0.54 |
+| \`VoiceStatus\` | free |
+
+Failures don't record (the gateway doesn't charge on errors per the
+"Payment was NOT charged" route guards). Telemetry is best-effort —
+\`recordUsage\` throws are swallowed so a disk-full event can't break
+a paid tool call.
+
+\`franklin\` status bar, panel Audit tab, and \`franklin stats\` now
+correctly show per-call cost for every Phone + Voice invocation.
+
+## Franklin Agent 3.21.0 — /phone-call skill + call journal + panel Calls tab
+
+The thin typed `VoiceCall` / `VoiceStatus` tools from PR #58 (v3.20.2) made
+voice calls reachable. This release adds the **orchestration layer** that
+turns them into a single coherent surface: a `/phone-call` skill that walks
+the agent through the full lifecycle, a persistent call journal at
+`~/.blockrun/calls.jsonl`, and a "Calls" tab in `franklin panel` for
+inspecting recent calls with expandable transcripts.
+
+**`/phone-call` skill** — bundled at `src/skills-bundled/phone-call/SKILL.md`.
+Seven-step workflow:
+
+1. Extract recipient (E.164, US/CA only) + task from the user's request
+2. List wallet-owned numbers via `ListPhoneNumbers` ($0.001); refuse if 0
+3. Compose the task script using a reusable template
+4. Confirm the full plan (to, from, cost, voice, max_duration, task summary)
+5. Fire `VoiceCall` ($0.54) — async, returns `call_id`
+6. Auto-poll `VoiceStatus` (free) every ~30s until terminal status or 10min cap
+7. Surface transcript, duration, recording URL, total cost
+
+Compliance baked into the skill body: US/CA only, daytime preference flagged
+in confirmation, TCPA prior-consent requirement for marketing calls, no
+auto-fired follow-ups, no calls to numbers the user didn't explicitly name.
+
+**Call journal** (`src/phone/call-log.ts`). Append-only JSONL at
+`~/.blockrun/calls.jsonl`. `VoiceCall` writes a "queued" row on initiation;
+`VoiceStatus` appends updates as the call progresses. `CallLog.summary()`
+returns one row per `call_id` (latest wins) — that's the canonical "recent
+calls" view the panel reads. Schema:
+
+```
+{ timestamp, call_id, to, from, task, voice?, max_duration_min?, language?,
+  status, duration_sec?, transcript?, recording_url?, paid_usd, tx_hash? }
+```
+
+**Panel "Calls" tab.** New sidebar nav between Phone and Sessions. Lists
+recent calls with status badge (green/amber/red), duration, cost, timestamp,
+recording link, and an expandable `<details>` block for the full transcript.
+Read-only — placing calls is agent-only for v3.21.0 (panel UI for *placing*
+calls would need to render the confirmation gate; deferred to a future plan).
+
+Two read-only panel endpoints (loopback + same-origin guarded):
+- `GET /api/calls?limit=50` — summary list
+- `GET /api/calls/:callId` — single-call detail
+
+**Telemetry.** Both `VoiceCall` ($0.54) and `VoiceStatus` (free) entries
+flow into the journal; per-call cost is visible in the panel Audit tab via
+the existing `recordUsage()` path the typed tools already use.
+
+**Context.ts** gains a Phone & Voice section under the BlockRun API doc
+block, listing all 8 typed tools + the `/phone-call` skill + compliance
+defaults — so even agents using the raw `BlockRun` primitive can discover
+the voice path through documentation.
+
+`franklin skills` now lists **8 bundled skills**: `budget-grill`,
+`surf-{market,chain,social}`, `trade-{signal,strategy,discussion}`,
+`phone-call`.
+
+404/404 tests pass — 5 new CallLog tests (round-trip, summary, byCallId,
+malformed-row rejection) + isTerminalStatus + no regressions.
+
 ## Franklin Agent 3.20.2 — Surf chat residue cleanup + typed Phone/Voice tools
 
 Two converging cleanups:

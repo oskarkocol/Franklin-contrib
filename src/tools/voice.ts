@@ -28,6 +28,7 @@ import {
 import type { CapabilityHandler, CapabilityResult, ExecutionScope } from '../agent/types.js';
 import { loadChain, API_URLS, VERSION } from '../config.js';
 import { logger } from '../logger.js';
+import { recordUsage } from '../stats/tracker.js';
 import { CallLog, type CallStatus } from '../phone/call-log.js';
 
 /** Singleton, lazy — paths are computed at first use so tests can stub homedir. */
@@ -60,11 +61,20 @@ const VOICE_TIMEOUT_MS = 30_000;
 
 // ─── Shared x402 helpers (paid POST + free GET) ───────────────────────────
 
+interface PaidCallMeta {
+  /** Tool name shown in the status bar / audit tab (e.g. "VoiceCall"). */
+  tool: string;
+  /** USD amount the gateway charges on success. 0 for free routes (VoiceStatus). */
+  priceUsd: number;
+}
+
 async function postWithPayment<T>(
   path: string,
   body: unknown,
   ctx: ExecutionScope,
+  meta: PaidCallMeta,
 ): Promise<T> {
+  const startMs = Date.now();
   const chain = loadChain();
   const apiUrl = API_URLS[chain];
   const endpoint = `${apiUrl}${path}`;
@@ -102,14 +112,21 @@ async function postWithPayment<T>(
       const errText = await response.text().catch(() => '');
       throw new Error(`Voice ${path} failed (${response.status}): ${errText.slice(0, 400)}`);
     }
-    return (await response.json()) as T;
+    const data = (await response.json()) as T;
+    // Telemetry — record the cost so the status bar's per-turn delta reflects
+    // real x402 spend (not just LLM cost). Best-effort; never block on failure.
+    try {
+      recordUsage(meta.tool, 0, 0, meta.priceUsd, Date.now() - startMs);
+    } catch { /* telemetry best-effort */ }
+    return data;
   } finally {
     clearTimeout(timeout);
     ctx.abortSignal.removeEventListener('abort', onAbort);
   }
 }
 
-async function getNoPayment<T>(path: string, ctx: ExecutionScope): Promise<T> {
+async function getNoPayment<T>(path: string, ctx: ExecutionScope, meta: PaidCallMeta): Promise<T> {
+  const startMs = Date.now();
   const chain = loadChain();
   const apiUrl = API_URLS[chain];
   const endpoint = `${apiUrl}${path}`;
@@ -127,7 +144,12 @@ async function getNoPayment<T>(path: string, ctx: ExecutionScope): Promise<T> {
       const errText = await resp.text().catch(() => '');
       throw new Error(`Voice ${path} failed (${resp.status}): ${errText.slice(0, 300)}`);
     }
-    return (await resp.json()) as T;
+    const data = (await resp.json()) as T;
+    // Record even free calls so the audit tab shows the activity (cost 0).
+    try {
+      recordUsage(meta.tool, 0, 0, meta.priceUsd, Date.now() - startMs);
+    } catch { /* telemetry best-effort */ }
+    return data;
   } finally {
     clearTimeout(timeout);
     ctx.abortSignal.removeEventListener('abort', onAbort);
@@ -286,7 +308,9 @@ export const voiceCallCapability: CapabilityHandler = {
     if (typeof input.wait_for_greeting === 'boolean') body.wait_for_greeting = input.wait_for_greeting;
 
     try {
-      const res = await postWithPayment<Record<string, unknown>>('/v1/voice/call', body, ctx);
+      const res = await postWithPayment<Record<string, unknown>>(
+        '/v1/voice/call', body, ctx, { tool: 'VoiceCall', priceUsd: 0.54 },
+      );
       const callId = (res.call_id || res.id) as string | undefined;
       // Persist a "queued" row so the panel sees the call before VoiceStatus polls.
       // Best-effort — if disk write fails we still surface the call_id to the agent.
@@ -349,6 +373,7 @@ export const voiceStatusCapability: CapabilityHandler = {
       const res = await getNoPayment<Record<string, unknown>>(
         `/v1/voice/call/${encodeURIComponent(input.call_id)}`,
         ctx,
+        { tool: 'VoiceStatus', priceUsd: 0 },
       );
       // Patch the local journal with whatever fields the gateway returned —
       // transcript / recording / duration / disposition. Append-only schema
