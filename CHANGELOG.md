@@ -1,5 +1,33 @@
 # Changelog
 
+## Franklin Agent 3.21.6 — VoiceCall: voicemail controls
+
+External contributor [@KillerQueen-Z](https://github.com/KillerQueen-Z)
+landed [PR #61](https://github.com/BlockRunAI/Franklin/pull/61) adding
+two optional params to the \`VoiceCall\` tool so the agent can control
+voicemail behavior from natural language instead of stuffing fragile
+if-then logic into the free-text \`task\` prompt:
+
+- \`voicemail_action\`: \`hangup\` | \`leave_message\` | \`ignore\`
+- \`voicemail_message\`: the monologue spoken when \`leave_message\` is set
+  (1–1000 chars)
+
+Now \`"call my client and if it goes to voicemail leave this message"\`
+parses cleanly into structured params. The tool spec description
+explicitly notes that voicemail is one-way — \`leave_message\` speaks
+the message once and hangs up, no back-and-forth — so the model
+doesn't try to script a conversation with a recording.
+
+Both fields are optional and only forwarded when provided, so ordinary
+calls are completely unchanged — Bland still hangs up on voicemail by
+default unless the caller explicitly opts in.
+
+**Gateway dependency.** Required a matching change on the BlockRun
+gateway side ([blockrun#26](https://github.com/BlockRunAI/blockrun/pull/26))
+because the call body is validated with \`.strict()\`. That PR landed
++ deployed before this Franklin release shipped; gateway acceptance
+was verified live via the 402 schema-response probe before merge.
+
 ## Franklin Agent 3.21.5 — UI: inline short pastes, only collapse when ≥ 5 lines
 
 External contributor [@KillerQueen-Z](https://github.com/KillerQueen-Z)
