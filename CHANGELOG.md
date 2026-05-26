@@ -1,5 +1,32 @@
 # Changelog
 
+## Franklin Agent 3.22.0 — ImageGen edits catch up to the gateway: mask inpainting, multi-image fusion, more models
+
+ImageGen could already do single-reference image-to-image, but the
+gateway's `/v1/images/image2image` surface had three capabilities the
+client never exposed. Now it does:
+
+- **Mask inpainting** — pass a `mask` (transparent pixels mark the
+  editable region) to repaint just part of an image. OpenAI edit models
+  only (`gpt-image-1`, `gpt-image-2`), mirroring the gateway.
+- **Multi-image fusion** — pass `images: [...]` to blend several
+  references (e.g. a subject photo + a brand logo) into one edit. Capped
+  per provider: 4 for OpenAI, 3 for Google. Cannot be combined with a mask.
+- **Google edit models** — `google/nano-banana` and
+  `google/nano-banana-pro` are now accepted for image-to-image, not just
+  the two OpenAI models.
+- **`n` outputs** — generate up to 4 images in one call; each is saved
+  with a `-1/-2/…` suffix and recorded against the content budget.
+
+Also fixes a size bug: the tool advertised DALL-E 3 sizes
+(`1792x1024` / `1024x1792`) that the gpt-image models reject. Sizes are
+now validated per model against the gateway's real size sets before
+paying, so a wrong size fails cheaply instead of burning USDC on a
+request the gateway 400s. `estimateImageCostUsd` is now size- and
+model-aware (mirrors the gateway base prices) and scales with `n`.
+
+411/411 tests pass (7 new image tests, 2 updated).
+
 ## Franklin Agent 3.21.9 — VoiceCall: expose interruption_threshold + model controls
 
 External contributor [@BeneficialVast1048](https://github.com/BeneficialVast1048)
