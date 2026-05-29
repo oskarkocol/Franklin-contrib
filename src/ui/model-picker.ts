@@ -22,7 +22,8 @@ export const MODEL_SHORTCUTS: Record<string, string> = {
   sonnet: 'anthropic/claude-sonnet-4.6',
   claude: 'anthropic/claude-sonnet-4.6',
   'sonnet-4.6': 'anthropic/claude-sonnet-4.6',
-  opus: 'anthropic/claude-opus-4.7',
+  opus: 'anthropic/claude-opus-4.8',
+  'opus-4.8': 'anthropic/claude-opus-4.8',
   'opus-4.7': 'anthropic/claude-opus-4.7',
   'opus-4.6': 'anthropic/claude-opus-4.6',
   haiku: 'anthropic/claude-haiku-4.5-20251001',
@@ -169,7 +170,7 @@ export const PICKER_CATEGORIES: ModelCategory[] = [
     // free-tier entries and v3.9.2 used to retire Kimi K2.5.
     category: '✨ Premium frontier',
     models: [
-      { id: 'anthropic/claude-opus-4.7',   shortcut: 'opus',      label: 'Claude Opus 4.7',   price: '$5/$25', highlight: true },
+      { id: 'anthropic/claude-opus-4.8',   shortcut: 'opus',      label: 'Claude Opus 4.8',   price: '$5/$25', highlight: true },
       { id: 'anthropic/claude-sonnet-4.6', shortcut: 'sonnet',    label: 'Claude Sonnet 4.6', price: '$3/$15' },
       { id: 'openai/gpt-5.5',              shortcut: 'gpt',       label: 'GPT-5.5',           price: '$5/$30', highlight: true },
       { id: 'google/gemini-3.1-pro',       shortcut: 'gemini-3',  label: 'Gemini 3.1 Pro',    price: '$2/$12' },

@@ -2350,7 +2350,10 @@ test('permissions: ActivateTool is auto-allowed in default and plan modes', asyn
 
 import { modelHasExtendedThinking, extractApiErrorMessage } from '../dist/agent/llm.js';
 
-test('modelHasExtendedThinking: Opus 4.7 returns false (adaptive thinking, no flag)', () => {
+test('modelHasExtendedThinking: Opus 4.7+ returns false (adaptive thinking, no flag)', () => {
+  assert.equal(modelHasExtendedThinking('anthropic/claude-opus-4.8'), false);
+  assert.equal(modelHasExtendedThinking('anthropic/claude-opus-4-8'), false);
+  assert.equal(modelHasExtendedThinking('claude-opus-4.8'), false);
   assert.equal(modelHasExtendedThinking('anthropic/claude-opus-4.7'), false);
   assert.equal(modelHasExtendedThinking('anthropic/claude-opus-4-7'), false);
   assert.equal(modelHasExtendedThinking('claude-opus-4.7'), false);
@@ -2721,7 +2724,7 @@ test('agent context: chat-completions example uses real model names (no fictiona
   // Real names that should appear as illustrative examples.
   for (const real of [
     'anthropic/claude-sonnet-4.6',
-    'anthropic/claude-opus-4.7',
+    'anthropic/claude-opus-4.8',
     'deepseek/deepseek-v4-pro',
     'zai/glm-5.1',
   ]) {
@@ -6318,7 +6321,7 @@ test('picker trim: shortcuts for hidden models still resolve (muscle-memory pres
 test('picker trim: hero shortcuts (opus, sonnet, gpt, gemini-3, grok-4) still in visible list', async () => {
   const { PICKER_CATEGORIES } = await import('../dist/ui/model-picker.js');
   const ids = PICKER_CATEGORIES.flatMap((c) => c.models.map((m) => m.id));
-  assert.ok(ids.includes('anthropic/claude-opus-4.7'));
+  assert.ok(ids.includes('anthropic/claude-opus-4.8'));
   assert.ok(ids.includes('anthropic/claude-sonnet-4.6'));
   assert.ok(ids.includes('openai/gpt-5.5'));
   assert.ok(ids.includes('google/gemini-3.1-pro'));
@@ -9457,7 +9460,7 @@ test('vision routing: Auto with image upgrades V4 Pro pick to a vision model', a
 
   // COMPLEX tier primary (Opus) already has vision — no escalation needed
   const complexWithVision = resolveTierToModel('COMPLEX', 'auto', true);
-  assert.equal(complexWithVision.model, 'anthropic/claude-opus-4.7');
+  assert.equal(complexWithVision.model, 'anthropic/claude-opus-4.8');
 
   // routeRequest path (no analyzer tier) — image-bearing prompt must end on vision
   const routedWithImage = routeRequest('what is in /tmp/foo.png', 'auto', true);
