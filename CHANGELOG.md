@@ -1,5 +1,35 @@
 # Changelog
 
+## Franklin Agent 3.23.1 — a 6% gateway blip no longer kills the whole session
+
+Telemetry (audited 2026-05-28) showed the Solana gateway intermittently
+returns `PaymentRejected` on ~6% of paid-model calls (28/468) — identical
+prompts succeed five seconds apart. Three client-side defects turned that
+transient blip into "session ruined, and restart doesn't help." This release
+caps the blast radius at a single turn:
+
+- **`payment_rejected` is now transient.** The classifier retries it up to
+  3× with backoff instead of surfacing a hard error on the first blip. Each
+  retry signs a fresh nonce, so a retry is not a replay — genuinely broken
+  wallets (wrong chain, clock skew) still exhaust the small budget quickly
+  and see the same guidance.
+- **One blip no longer demotes you for the whole session.** `payment_rejected`
+  now falls back to a free model **for that turn only** — it isn't added to
+  the session-permanent payment blacklist and carries no elo penalty, and the
+  next turn resets to your chosen model. (Genuine 402s / insufficient funds
+  stay session-permanent, as before.) The per-turn fallback also resets the
+  retry counter so the free model gets its own budget rather than inheriting
+  the exhausted one.
+- **`/exit` no longer leaves a zombie.** MCP shutdown is now a bounded 2s
+  race followed by an explicit `process.exit()` in both the Ink and basic
+  UIs, so keep-alive sockets and MCP child processes can't pin the event loop
+  after "Goodbye."
+
+The gateway-side root cause (a Solana nonce-cache race) is tracked separately;
+this release is the client-side blast-radius cap.
+
+435/435 local tests pass; e2e green against live models.
+
 ## Franklin Agent 3.23.0 — Claude Opus 4.8 is the new flagship + tool-call repair pipeline
 
 The BlockRun gateway now serves **`anthropic/claude-opus-4.8`** — the most
