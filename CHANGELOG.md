@@ -1,5 +1,28 @@
 # Changelog
 
+## Franklin Agent 3.24.3 — Anthropic multi-turn sessions no longer hard-400 on cache_control overflow
+
+Run more than a couple of turns on an Anthropic model with tools registered and
+Franklin would wedge: every request after history reached 3 messages came back
+`HTTP 400: A maximum of 4 blocks with cache_control may be provided. Found 5.`
+`/retry` replayed the same over-budget history straight into the same wall, so
+the session was stuck — not a transient blip.
+
+The prompt-caching helper spent its breakpoints without counting them against
+Anthropic's hard cap of 4 (counted across `system` + `tools` + `messages`
+combined): 1 on the system prompt, 1 on the last tool, and a fixed 3 on the
+rolling message window — 5 total once the conversation filled the window. Early
+turns slipped under the cap only because the window wasn't full yet.
+
+- **Caching breakpoints are now budgeted to a hard total of 4.** System and the
+  last tool are spent first; the rolling message window gets only the remaining
+  budget (typically 3→2 once both are present). The cache still stays warm —
+  the only changed case is the previously-overflowing one, which now sends 4
+  instead of 5 and is accepted. Behavior is identical in every other scenario.
+
+Fixes #73. 443/443 local tests pass (adds a regression test asserting the
+worst-case path — system + tools + ≥3 messages — stays ≤ 4 breakpoints).
+
 ## Franklin Agent 3.24.1 — slow first tokens from reasoning models no longer time out at 90s
 
 Point Franklin at a big, cache-cold prompt — "synthesize a long document from

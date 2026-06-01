@@ -365,11 +365,20 @@ function applyAnthropicPromptCaching(
   const out = { ...payload };
   const cacheMarker = { type: 'ephemeral' as const };
 
+  // Anthropic allows a MAXIMUM of 4 blocks carrying cache_control, counted
+  // across system + tools + messages COMBINED. Exceeding it is a hard 400:
+  //   "A maximum of 4 blocks with cache_control may be provided. Found 5."
+  // Spend the stable breakpoints (system, last tool) first, then give the
+  // rolling message window only whatever budget is left. See issue #73.
+  const MAX_BREAKPOINTS = 4;
+  let used = 0;
+
   // 1. System prompt → wrap as array with cache_control on the text block
   if (typeof request.system === 'string' && request.system.length > 0) {
     out['system'] = [
       { type: 'text', text: request.system, cache_control: cacheMarker },
     ];
+    used++;
   }
 
   // 2. Tools → cache_control on the last tool (stable across turns)
@@ -377,17 +386,21 @@ function applyAnthropicPromptCaching(
     const toolsCopy = request.tools.map(t => ({ ...t }));
     (toolsCopy[toolsCopy.length - 1] as Record<string, unknown>)['cache_control'] = cacheMarker;
     out['tools'] = toolsCopy;
+    used++;
   }
 
-  // 3. Messages → rolling cache_control on last 3 messages (user/assistant).
+  // 3. Messages → rolling cache_control on the last N messages (user/assistant).
   // System is a separate field in ModelRequest, so all messages here are non-system.
-  // Strategy: mark the last 3 messages so the cached prefix extends as the
+  // Strategy: mark the last messages so the cached prefix extends as the
   // conversation grows. Older cached prefixes expire after 5 min but newer
-  // ones keep the cache warm.
+  // ones keep the cache warm. The window is capped at 3 but never allowed to
+  // push the combined total past MAX_BREAKPOINTS — once system + tools are
+  // spent it shrinks (typically 3→2) so the request stays within Anthropic's limit.
   if (request.messages && request.messages.length > 0) {
     const messagesCopy = request.messages.map(m => ({ ...m }));
-    // Mark last 3 messages (or fewer if history is shorter)
-    const start = Math.max(0, messagesCopy.length - 3);
+    // Mark the last `windowSize` messages (or fewer if history is shorter).
+    const windowSize = Math.min(3, Math.max(0, MAX_BREAKPOINTS - used));
+    const start = Math.max(0, messagesCopy.length - windowSize);
     for (let idx = start; idx < messagesCopy.length; idx++) {
       const msg = messagesCopy[idx];
       if (typeof msg.content === 'string') {
@@ -580,14 +593,18 @@ export class ModelClient {
         requestPayload['temperature'] = 1;
       }
 
-      // ─ Anthropic prompt caching: `system_and_3` strategy ─────────────────
-      // 4 cache_control breakpoints (Anthropic max):
+      // ─ Anthropic prompt caching: budgeted breakpoints ───────────────────
+      // Anthropic permits at most 4 cache_control breakpoints, counted across
+      // system + tools + messages combined. We spend them in priority order:
       //   1. System prompt (stable across turns)
-      //   2-4. Last 3 non-system messages (rolling window)
+      //   2. Last tool definition (stable across turns)
+      //   3+. Rolling window over the last non-system messages — given only
+      //       the remaining budget (so system + tool + window ≤ 4).
       //
       // This keeps the cache warm across turns: each new turn extends the
       // cache instead of invalidating it. ~75% input token savings on
-      // multi-turn conversations. Pattern adopted from nousresearch/hermes-agent.
+      // multi-turn conversations. The budget cap fixes a hard 400 once a
+      // session reached ≥3 messages (system + tool + 3 = 5). See issue #73.
       requestPayload = applyAnthropicPromptCaching(requestPayload, request);
     }
 

@@ -2451,6 +2451,99 @@ test('streamCompletion payload: non-Anthropic model must not include thinking fi
   assert.equal(body.thinking, undefined, 'non-Anthropic must not get thinking flag');
 });
 
+// ─── Anthropic prompt caching: ≤4 cache_control breakpoints (issue #73) ──────
+//
+// Anthropic allows a MAXIMUM of 4 blocks carrying `cache_control`, counted
+// across system + tools + messages combined. applyAnthropicPromptCaching used
+// to spend 1 (system) + 1 (last tool) + 3 (rolling message window) = 5 once a
+// session reached ≥3 non-system messages, which Anthropic rejected with:
+//   HTTP 400: A maximum of 4 blocks with cache_control may be provided. Found 5.
+// This was the previously-uncovered worst-case path (system + tools + ≥3 msgs).
+
+async function captureRequestBody(request) {
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (_url, init) => {
+    captured = JSON.parse(init.body);
+    throw new Error('captured');
+  };
+  try {
+    const client = new ModelClient({ apiUrl: 'http://test.invalid', chain: 'base' });
+    const gen = client.streamCompletion(request);
+    try { await gen.next(); } catch { /* expected: 'captured' */ }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  return captured;
+}
+
+function countCacheControlBlocks(body) {
+  let n = 0;
+  // system: array of content blocks
+  if (Array.isArray(body.system)) {
+    n += body.system.filter(b => b && b.cache_control).length;
+  }
+  // tools: cache_control sits directly on a tool object
+  if (Array.isArray(body.tools)) {
+    n += body.tools.filter(t => t && t.cache_control).length;
+  }
+  // messages: cache_control sits on content blocks (content is array after caching)
+  if (Array.isArray(body.messages)) {
+    for (const m of body.messages) {
+      if (Array.isArray(m.content)) {
+        n += m.content.filter(c => c && c.cache_control).length;
+      } else if (m && m.cache_control) {
+        n += 1;
+      }
+    }
+  }
+  return n;
+}
+
+test('streamCompletion payload: Anthropic caching emits at most 4 cache_control blocks (issue #73)', async () => {
+  const body = await captureRequestBody({
+    model: 'anthropic/claude-opus-4.8',
+    system: 'You are Franklin, an autonomous economic agent.',
+    tools: [
+      { name: 'Read', description: 'read a file', input_schema: { type: 'object' } },
+      { name: 'Bash', description: 'run a command', input_schema: { type: 'object' } },
+    ],
+    messages: [
+      { role: 'user', content: 'check Surf data endpoints' },
+      { role: 'assistant', content: 'looking now' },
+      { role: 'user', content: 'continue' },
+      { role: 'assistant', content: 'still working' },
+      { role: 'user', content: 'continue' },
+    ],
+    max_tokens: 1024,
+  });
+  assert.ok(body, 'fetch must have been called and body captured');
+  const count = countCacheControlBlocks(body);
+  assert.ok(
+    count <= 4,
+    `Anthropic permits at most 4 cache_control blocks; got ${count} (system + tools + messages)`,
+  );
+});
+
+test('streamCompletion payload: Anthropic caching still caches system + tools + a message window', async () => {
+  const body = await captureRequestBody({
+    model: 'anthropic/claude-opus-4.8',
+    system: 'You are Franklin.',
+    tools: [{ name: 'Read', description: 'read', input_schema: { type: 'object' } }],
+    messages: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' },
+    ],
+    max_tokens: 1024,
+  });
+  // system(1) + last tool(1) + message window(2) = 4 — the cache stays warm,
+  // we just shrink the message window from 3→2 to respect the hard cap.
+  assert.equal(countCacheControlBlocks(body), 4, 'should use the full budget of 4');
+  assert.ok(Array.isArray(body.system) && body.system[0].cache_control, 'system is cached');
+  assert.ok(body.tools[body.tools.length - 1].cache_control, 'last tool is cached');
+});
+
 // ─── Runtime tool_choice retry: gateway-aliased reasoner backends ─────
 //
 // Verified 2026-05-04 in a live session: a request for
