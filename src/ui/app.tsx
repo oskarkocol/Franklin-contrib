@@ -24,6 +24,7 @@ import { estimateCost } from '../pricing.js';
 import { formatTokens, shortModelName } from '../stats/format.js';
 import { mouse, forceDisableMouseTracking, type MouseEvent as TermMouseEvent } from './mouse.js';
 import { resolveAskUserAnswer } from './ask-user-answer.js';
+import { looksLikeImagePasteStub } from './paste-heuristics.js';
 
 // ─── Full-width input box ──────────────────────────────────────────────────
 
@@ -454,52 +455,59 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
       pasteBufferRef.current = '';
       pasteActiveRef.current = false;
 
-      // Image-paste detection. Original heuristic (3.25.0) only probed the
-      // clipboard when the bracketed-paste buffer was empty, assuming Cmd+V
-      // on an image-only clipboard always arrived as an empty paste. That
-      // assumption holds for macOS Terminal/iTerm2 but NOT for several Linux
-      // terminals — some send a filename, a `file://` URI, or a short binary
-      // header alongside the image, which made the gate skip the probe and
-      // the image silently dropped (user-reported on Kali: the clipboard
-      // image was readable by other tools but Franklin couldn't paste it).
-      // Verified in a Lima Ubuntu VM with xclip — non-empty buffer triggered
-      // the skip.
-      //
-      // Fix: ALWAYS probe the clipboard on a paste-end. If an image is there,
-      // it wins; the bracketed-paste buffer text is treated as terminal noise
-      // and dropped. If no image, fall through to the normal text-paste path
-      // (collapse-to-block or inline) so text pastes are unaffected. The
-      // probe is async (osascript / xclip / wl-paste shell-out, 30-100 ms),
-      // so the handler returns immediately and updateValue happens when the
-      // Promise resolves.
+      // Image-paste detection. Cmd+V on a clipboard image arrives as an empty
+      // bracketed paste on macOS Terminal/iTerm2; several Linux terminals
+      // instead emit a filename, a `file://` URI, or the raw image header
+      // alongside it (3.25.0 only probed on an empty buffer, so those Linux
+      // shapes silently dropped the image — fixed in #77). We probe the system
+      // clipboard for an image only when the buffer *looks* like one of those
+      // stubs; genuine text is inserted synchronously below so the common
+      // paste path never waits on the async osascript / xclip / wl-paste
+      // shell-out (30-100 ms, but a cold spawn can be more).
       const insertAt = currentCursorOffset;
-      tryReadClipboardImage().then((img) => {
-        if (img && 'path' in img) {
-          // Image wins — drop the bracketed-paste buffer (likely a stub the
-          // terminal sent for the image).
-          const injected = encodeImageBlock(img.path);
-          const cur = valueRef.current;
-          const at = Math.min(insertAt, cur.length);
-          updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
-          return;
-        }
-        if (img && 'error' in img) {
-          const injected = `[Image rejected: ${img.error}] `;
-          const cur = valueRef.current;
-          const at = Math.min(insertAt, cur.length);
-          updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
-          return;
-        }
-        // No image on the clipboard — treat as a normal text paste.
-        if (buffered.length === 0) return;
-        const lineCount = buffered.split('\n').length;
+      const insertPastedText = (buf: string, baseOffset: number) => {
+        if (buf.length === 0) return;
+        const lineCount = buf.split('\n').length;
         const textToInsert = lineCount >= PASTE_COLLAPSE_LINE_THRESHOLD
-          ? encodePasteBlock(buffered)
-          : buffered;
+          ? encodePasteBlock(buf)
+          : buf;
         const cur = valueRef.current;
-        const at = Math.min(insertAt, cur.length);
+        const at = Math.min(baseOffset, cur.length);
         updateValue(cur.slice(0, at) + textToInsert + cur.slice(at), at + textToInsert.length);
-      }).catch(() => { /* best-effort */ });
+      };
+
+      if (looksLikeImagePasteStub(buffered)) {
+        // The probe is async; the handler returns now and updateValue happens
+        // when the Promise resolves. insertAt (captured above) pins the result
+        // to where the user pasted even if the cursor moved meanwhile.
+        tryReadClipboardImage().then((img) => {
+          if (img && 'path' in img) {
+            // Image wins — drop the bracketed-paste buffer (the terminal stub).
+            const injected = encodeImageBlock(img.path);
+            const cur = valueRef.current;
+            const at = Math.min(insertAt, cur.length);
+            updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
+            return;
+          }
+          if (img && 'error' in img) {
+            const injected = `[Image rejected: ${img.error}] `;
+            const cur = valueRef.current;
+            const at = Math.min(insertAt, cur.length);
+            updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
+            return;
+          }
+          // No image after all — the stub was literal text (e.g. a lone
+          // "photo.png" the user actually typed). Insert it as text.
+          insertPastedText(buffered, insertAt);
+        }).catch(() => {
+          // Probe failed unexpectedly — don't lose the paste; insert as text.
+          insertPastedText(buffered, insertAt);
+        });
+        return;
+      }
+
+      // Genuine text paste — insert synchronously, no clipboard probe.
+      insertPastedText(buffered, currentCursorOffset);
       return;
     }
 
