@@ -150,6 +150,18 @@ function decodePromptValue(value: string): string {
   return decoded + value.slice(cursor);
 }
 
+function promptValueForDisplay(value: string): string {
+  let rendered = '';
+  let cursor = 0;
+
+  for (const block of findPasteBlocks(value)) {
+    rendered += value.slice(cursor, block.start) + pasteSummary(block);
+    cursor = block.end;
+  }
+
+  return rendered + value.slice(cursor);
+}
+
 /**
  * Read the system clipboard, and if it currently holds an image, save it to
  * a temp file and return the absolute path. Otherwise return null.
@@ -371,6 +383,18 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
     setCursorOffset(cursorOffsetRef.current);
   }, [onChange]);
 
+  const insertClipboardImageAt = useCallback((insertAt: number) => {
+    tryReadClipboardImage().then((img) => {
+      let injected: string;
+      if (img && 'path' in img) injected = encodeImageBlock(img.path);
+      else if (img && 'error' in img) injected = `[Image rejected: ${img.error}] `;
+      else return; // no image on clipboard — nothing to do
+      const cur = valueRef.current;
+      const at = Math.min(insertAt, cur.length);
+      updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
+    }).catch(() => { /* best-effort, errors already mapped to inline text above */ });
+  }, [updateValue]);
+
   useInput((input, key) => {
     if (!focus) return;
 
@@ -389,7 +413,7 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
     }
 
     if (key.return && !isPasting) {
-      onSubmit(decodePromptValue(currentValue));
+      onSubmit(currentValue);
       return;
     }
 
@@ -438,6 +462,14 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
           currentCursorOffset - 1,
         );
       }
+      return;
+    }
+
+    // Some Linux terminals do not emit a bracketed-paste event for image-only
+    // clipboard contents. Ctrl+V gives users a raw-key fallback that probes the
+    // same clipboard image path without relying on terminal paste behavior.
+    if (key.ctrl && input === 'v') {
+      insertClipboardImageAt(currentCursorOffset);
       return;
     }
 
@@ -532,7 +564,7 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
 }
 
 function formatUserPromptForDisplay(value: string): string {
-  return `❯ ${decodePromptValue(value)}`;
+  return `❯ ${promptValueForDisplay(value)}`;
 }
 
 function disableTerminalAutoWrap(): (() => void) | undefined {
@@ -1211,7 +1243,7 @@ function RunCodeApp({
           turnTierRef.current = undefined;
           turnSavingsRef.current = undefined;
           turnCtxPctRef.current = undefined;
-          onSubmit(lastPrompt);
+          onSubmit(decodePromptValue(lastPrompt).trim());
           return;
 
         default:
@@ -1261,7 +1293,7 @@ function RunCodeApp({
     turnTierRef.current = undefined;
     turnSavingsRef.current = undefined;
     turnCtxPctRef.current = undefined;
-    onSubmit(trimmed);
+    onSubmit(decodePromptValue(trimmed).trim());
   }, [ready, currentModel, totalCost, onSubmit, onModelChange, requestExit, lastPrompt, inputHistory, showStatus]);
 
   // Mouse support — OFF by default because Node stdin is shared: mouse escape
