@@ -83,6 +83,20 @@ function encodeImageBlock(absolutePath: string): string {
   return `${IMG_BLOCK_START}${Buffer.from(absolutePath, 'utf8').toString('base64')}${IMG_BLOCK_END}`;
 }
 
+/**
+ * Probe the clipboard for an image and return the input-block to splice in at
+ * the cursor — an encoded `[IMG:…]` block on success, an inline
+ * `[Image rejected: …]` notice if the image was found but unusable, or null
+ * when there's no image. Shared by PromptTextInput's Ctrl+V path and VimInput
+ * (which renders instead of PromptTextInput in vim mode).
+ */
+async function readClipboardImageInjection(): Promise<string | null> {
+  const img = await tryReadClipboardImage();
+  if (img && 'path' in img) return encodeImageBlock(img.path);
+  if (img && 'error' in img) return `[Image rejected: ${img.error}] `;
+  return null;
+}
+
 function decodeBlockPayload(token: string, startMarker: string, endMarker: string): string {
   if (!token.startsWith(startMarker) || !token.endsWith(endMarker)) return token;
   const payload = token.slice(startMarker.length, -endMarker.length);
@@ -384,15 +398,12 @@ function PromptTextInput({ value, onChange, onSubmit, placeholder = '', focus = 
   }, [onChange]);
 
   const insertClipboardImageAt = useCallback((insertAt: number) => {
-    tryReadClipboardImage().then((img) => {
-      let injected: string;
-      if (img && 'path' in img) injected = encodeImageBlock(img.path);
-      else if (img && 'error' in img) injected = `[Image rejected: ${img.error}] `;
-      else return; // no image on clipboard — nothing to do
+    readClipboardImageInjection().then((injected) => {
+      if (!injected) return; // no image on clipboard — nothing to do
       const cur = valueRef.current;
       const at = Math.min(insertAt, cur.length);
       updateValue(cur.slice(0, at) + injected + cur.slice(at), at + injected.length);
-    }).catch(() => { /* best-effort, errors already mapped to inline text above */ });
+    }).catch(() => { /* best-effort */ });
   }, [updateValue]);
 
   useInput((input, key) => {
@@ -696,6 +707,7 @@ function InputBox({ input, setInput, onSubmit, model, balance, chain, walletTail
               focus={focused !== false}
               showMode={true}
               onModeChange={onVimModeChange}
+              onClipboardImage={readClipboardImageInjection}
             />
           ) : (
             <PromptTextInput
@@ -1247,14 +1259,17 @@ function RunCodeApp({
           return;
 
         default:
-          // All other slash commands pass through to the agent loop's command registry
+          // All other slash commands pass through to the agent loop's command registry.
+          // Decode here too: a slash command can carry an encoded paste/image block
+          // as an argument, and the registry expects real text / file paths,
+          // not the encoded block sentinels.
           setStreamText('');
           setThinking(false);
           setThinkingText('');
           setTools(new Map());
           setWaiting(true);
           setReady(false);
-          onSubmit(trimmed);
+          onSubmit(decodePromptValue(trimmed).trim());
           return;
       }
     }

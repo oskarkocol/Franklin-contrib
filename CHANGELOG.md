@@ -1,5 +1,26 @@
 # Changelog
 
+## Franklin Agent 3.25.4 — decode pasted blocks on slash commands, Ctrl+V image paste in vim mode
+
+Two follow-ups to the image-paste work in 3.25.3.
+
+- **Slash commands now decode pasted blocks.** Every other submit path ran the
+  input through `decodePromptValue` to turn encoded paste/image sentinels back
+  into real text and file paths, but the catch-all slash-command branch passed
+  the raw `trimmed` string straight to the command registry. A `/`-command that
+  carried a pasted block as an argument reached the registry as opaque
+  `[IMG:…]` / paste sentinels instead of the decoded value. It now decodes (and
+  trims) before dispatch, matching the other branches.
+- **Ctrl+V image paste now works in vim mode.** The Ctrl+V clipboard-image
+  fallback — for terminals that don't emit a bracketed-paste event for
+  image-only clipboards — lived only in `PromptTextInput`, so vim-mode users
+  couldn't paste images at all. The clipboard probe is now a shared
+  `readClipboardImageInjection` helper wired into both inputs; in vim mode
+  Ctrl+V saves an undo point, captures the cursor offset, and splices the
+  encoded block in when the async probe resolves. The async insert reads a ref
+  that mirrors the latest value every render, so it never splices into a stale
+  string if the input is cleared or rewritten mid-probe.
+
 ## Franklin Agent 3.25.3 — restore GPT-5 / Grok families, surface real errors
 
 Two regressions silently broke whole model families in headless (`-p`) mode —
