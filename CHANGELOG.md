@@ -1,5 +1,11 @@
 # Changelog
 
+## Franklin Agent 3.26.1 — GLM flat pricing fully retired
+
+- **Z.AI ended its remaining flat $0.001/call promos on 2026-06-06** (backend d840de7): `zai/glm-5` now bills per-token at $0.60/$1.92 and `zai/glm-5-turbo` at $1.20/$4.00 (glm-5.1 stays $1.40/$4.40). Pricing rows updated for accurate session-cost records.
+- **Picker: the "Flat rate ($0.001/call)" category is gone** — nothing qualifies anymore. GLM-5 moves into Budget at its per-token price; `glm-5` / `glm-turbo` / `glm` shortcuts all still resolve.
+
+
 ## Franklin Agent 3.26.0 — catalog sync: Grok 4.3 flagship, V4 Pro permanent pricing, GLM promo end
 
 Model-catalog alignment with the BlockRun gateway's 2026-06-04/05 drops.
