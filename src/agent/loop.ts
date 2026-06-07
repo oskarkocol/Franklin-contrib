@@ -4,7 +4,7 @@
  */
 
 import { ModelClient } from './llm.js';
-import { autoCompactIfNeeded, forceCompact, microCompact } from './compact.js';
+import { autoCompactIfNeeded, forceCompact, microCompact, projectCompactionSavings } from './compact.js';
 import { estimateHistoryTokens, updateActualTokens, resetTokenAnchor, getAnchoredTokenCount, getContextWindow, setEstimationModel } from './tokens.js';
 import { handleSlashCommand } from './commands.js';
 import { loadBundledSkills, getSkillVars } from '../skills/bootstrap.js';
@@ -1153,13 +1153,22 @@ export async function interactiveSession(
       // compacting (the compact itself runs on a cheaper model
       // and costs <$0.05).
       const TURN_COST_CAP_FOR_EARLY_COMPACT = 1.00;
+      // ROI gate: forceCompact (used below) has no savings check of its own, so
+      // without this it fires even on a tiny history and reports "saved 1%" —
+      // a wasted summarizer round-trip. Only compact when the projected savings
+      // clear the floor (≥20%), which a small history can never do.
+      // The ROI gate applies ONLY to the call-count trigger: the $1.00 cost cap
+      // is an emergency brake (see the 2026-05-11 note above) and must fire
+      // even when projected savings are low — gating it would reintroduce the
+      // $9.45 runaway it was added to stop.
+      const bloatTriggered =
+        (turnToolCalls > 15 && turnCostUsd > 0.03 && projectCompactionSavings(history).worthIt) ||
+        turnCostUsd > TURN_COST_CAP_FOR_EARLY_COMPACT;
       if (
+        config.costSaver !== false &&
         !bloatCompactedThisTurn &&
         compactFailures < 3 &&
-        (
-          (turnToolCalls > 15 && turnCostUsd > 0.03) ||
-          turnCostUsd > TURN_COST_CAP_FOR_EARLY_COMPACT
-        )
+        bloatTriggered
       ) {
         try {
           const beforeTokens = estimateHistoryTokens(history);

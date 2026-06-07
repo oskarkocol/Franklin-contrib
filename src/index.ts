@@ -23,6 +23,7 @@ import { configCommand } from './commands/config.js';
 import { statsCommand } from './commands/stats.js';
 import { logsCommand } from './commands/logs.js';
 import { daemonCommand } from './commands/daemon.js';
+import { slackCommand } from './commands/slack.js';
 import { initCommand } from './commands/init.js';
 import { uninitCommand } from './commands/uninit.js';
 import { proxyCommand } from './commands/proxy.js';
@@ -107,12 +108,30 @@ program
   .action((action, options) => daemonCommand(action, options));
 
 program
+  .command('slack')
+  .description('Run the Slack ingress bot (Socket Mode)')
+  .option('--model <model>', 'Model to use')
+  .option('--debug', 'Verbose Slack/Bolt logging')
+  .action((options) => slackCommand(options));
+
+program
   .command('panel')
   .description('Open the Franklin dashboard (localhost:3100)')
   .option('-p, --port <port>', 'Dashboard port', '3100')
   .action(async (options: { port?: string }) => {
     const { panelCommand } = await import('./commands/panel.js');
     await panelCommand(options);
+  });
+
+program
+  .command('serve')
+  .description('Run the local agent server for the desktop app / browser UI (WebSocket on localhost:3737)')
+  .option('-p, --port <port>', 'Agent server port', '3737')
+  .option('--work-dir <dir>', 'Working directory for tools (default: cwd)')
+  .option('--debug', 'Verbose logging')
+  .action(async (options: { port?: string; workDir?: string; debug?: boolean }) => {
+    const { serveCommand } = await import('./commands/serve.js');
+    await serveCommand(options);
   });
 
 program
@@ -376,5 +395,10 @@ if (firstArg === 'solana' || firstArg === 'base') {
   await startCommand(startOpts as Parameters<typeof startCommand>[0]);
   process.exit(process.exitCode ?? 0);
 } else {
-  program.parse();
+  // Force node-style argv slicing. When the CLI is embedded and run via
+  // Electron-as-node (ELECTRON_RUN_AS_NODE=1, e.g. the desktop app spawning
+  // `franklin serve`), commander otherwise detects `process.versions.electron`
+  // + no defaultApp and slices argv as a packaged-electron app — treating the
+  // script path as the command. `from: 'node'` keeps [exec, script, ...args].
+  program.parse(process.argv, { from: 'node' });
 }
