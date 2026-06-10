@@ -1247,8 +1247,24 @@ document.getElementById('wallet-onramp-btn').addEventListener('click', async () 
     const r = await fetch('/api/wallet/onramp', { method: 'POST' });
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.url) throw new Error(data.error || r.statusText || 'failed');
-    window.open(data.url, '_blank', 'noopener');
-    status.textContent = '';
+    // The mint round-trip can outlive the browser's transient user-activation
+    // window, so popup blockers may eat this open. The token stays valid for
+    // ~5 min — on block, hand the user a real link (a fresh gesture).
+    const win = window.open(data.url, '_blank', 'noopener');
+    if (win) {
+      status.textContent = '';
+    } else {
+      status.textContent = 'Popup blocked — ';
+      const a = document.createElement('a');
+      a.href = data.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'click here to open Coinbase';
+      status.appendChild(a);
+    }
+    // Funding an empty wallet creates it server-side on first mint — re-render
+    // so the address/QR/balance reflect the wallet Coinbase is about to fund.
+    loadWallet().catch(() => {});
   } catch (err) {
     status.textContent = err && err.message ? err.message : 'Failed to open Coinbase';
   } finally {

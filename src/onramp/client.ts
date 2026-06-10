@@ -12,7 +12,7 @@
  * and reuses the shared x402 POST helper.
  */
 
-import { API_URLS } from '../config.js';
+import { API_URLS, loadChain } from '../config.js';
 import { postWithPayment } from '../payments/post-with-payment.js';
 
 export interface OnrampLinkResult {
@@ -25,6 +25,11 @@ export interface OnrampLinkResult {
  * Throws if the gateway is unreachable, not configured, or returns no URL.
  */
 export async function getOnrampUrl(address: string): Promise<OnrampLinkResult> {
+  // postWithPayment signs with the active chain's wallet; on Solana that
+  // would crash confusingly against this Base-only endpoint. Fail clearly.
+  if (loadChain() !== 'base') {
+    throw new Error('Onramp is Base-only — switch to Base to buy USDC with a card.');
+  }
   const endpoint = `${API_URLS.base}/v1/onramp/token`;
   const result = await postWithPayment(
     endpoint,

@@ -1,5 +1,15 @@
 # Changelog
 
+## Franklin Agent 3.28.1 — onramp hardening from end-to-end review
+
+Fixes from a full-system review of the 3.28.0 onramp flow.
+
+- **Popup blocker no longer eats the funding link.** The mint round-trip (wallet signature → gateway → Coinbase) can outlive the browser's transient user-activation window, so `window.open` was sometimes blocked and the one-time link silently lost. On block, the panel now shows "Popup blocked — click here to open Coinbase" with the still-valid link (tokens live ~5 min).
+- **Wallet card refreshes after minting.** Funding an empty wallet creates it server-side on first mint; the address/QR/balance now re-render so you see the wallet Coinbase is about to fund.
+- **`getOnrampUrl` fails clearly on Solana** instead of crashing inside payment signing against the Base-only endpoint.
+- Gateway side (deployed): free link minting is now rate-limited (10/h per wallet, 30/h per IP) so the shared Coinbase key can't be exhausted by signature loops.
+
+
 ## Franklin Agent 3.28.0 — Coinbase Onramp: buy USDC with a card
 
 Fund your wallet without already holding crypto. The Wallet tab in the panel gains a **"Buy USDC with card"** button that opens Coinbase Onramp prefilled for your Base wallet — fiat → USDC lands directly in your self-custody address.
