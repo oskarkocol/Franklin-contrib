@@ -6378,11 +6378,14 @@ test('collapseRepetitiveTools leaves image-bearing tool_results alone', async ()
   assert.match(trB.content, /\[xxxx.+\.\.\.\]/);
 });
 
-test('kimi: K2.5 picker shortcuts now resolve to K2.6 (gateway retired K2.5)', async () => {
+test('kimi: shortcuts resolve to K2.7 flagship; k2.6 pin still works', async () => {
+  // K2.7 became the gateway Kimi flagship 2026-06 (K2.6 demoted but still
+  // routes). `kimi` + retired K2.5 aliases follow the flagship; `k2.6` pins K2.6.
   const { resolveModel } = await import('../dist/ui/model-picker.js');
-  assert.equal(resolveModel('kimi-k2.5'), 'moonshot/kimi-k2.6');
-  assert.equal(resolveModel('k2.5'), 'moonshot/kimi-k2.6');
-  assert.equal(resolveModel('kimi'), 'moonshot/kimi-k2.6');
+  assert.equal(resolveModel('kimi'), 'moonshot/kimi-k2.7');
+  assert.equal(resolveModel('k2.7'), 'moonshot/kimi-k2.7');
+  assert.equal(resolveModel('kimi-k2.5'), 'moonshot/kimi-k2.7');
+  assert.equal(resolveModel('k2.5'), 'moonshot/kimi-k2.7');
   assert.equal(resolveModel('k2.6'), 'moonshot/kimi-k2.6');
 });
 
@@ -6560,22 +6563,24 @@ test('getToolAnomalies: math is deterministic on synthetic on-disk fixture', asy
   }
 });
 
-test('kimi: picker no longer lists the retired K2.5 entry', async () => {
+test('kimi: picker lists the K2.7 flagship, not retired/demoted entries', async () => {
   const { PICKER_CATEGORIES } = await import('../dist/ui/model-picker.js');
   const ids = PICKER_CATEGORIES.flatMap((c) => c.models.map((m) => m.id));
   assert.ok(!ids.includes('moonshot/kimi-k2.5'),
     'moonshot/kimi-k2.5 should be removed from the picker (retired by the gateway)');
-  assert.ok(ids.includes('moonshot/kimi-k2.6'),
-    'moonshot/kimi-k2.6 must remain in the picker');
+  assert.ok(ids.includes('moonshot/kimi-k2.7'),
+    'moonshot/kimi-k2.7 (the current flagship) must be in the picker');
 });
 
-test('kimi: pricing keeps K2.5 entries for legacy session-cost records', async () => {
+test('kimi: pricing keeps legacy entries for session-cost records', async () => {
   const { MODEL_PRICING } = await import('../dist/pricing.js');
-  // Keeping retired model pricing is the same pattern used for nvidia/gpt-oss-120b
-  // and similar — old session-cost records reference these IDs and must not crash.
+  // Keeping retired/demoted model pricing is the same pattern used for
+  // nvidia/gpt-oss-120b and similar — old session-cost records reference these
+  // IDs and must not crash. K2.7 is the current flagship.
+  assert.ok(MODEL_PRICING['moonshot/kimi-k2.7']);
+  assert.ok(MODEL_PRICING['moonshot/kimi-k2.6']);
   assert.ok(MODEL_PRICING['moonshot/kimi-k2.5']);
   assert.ok(MODEL_PRICING['nvidia/kimi-k2.5']);
-  assert.ok(MODEL_PRICING['moonshot/kimi-k2.6']);
 });
 
 // ─── picker trim (v3.9.3) ─────────────────────────────────────────────────
@@ -6604,7 +6609,7 @@ test('picker trim: shortcuts for hidden models still resolve (muscle-memory pres
   assert.equal(resolveModel('o4'), 'openai/o4-mini');
   assert.equal(resolveModel('nano'), 'openai/gpt-5-nano');
   // grok promoted to the public flagship grok-4.3 (2026-06-04) — same
-  // flagship-promotion pattern as kimi → k2.6. Explicit pins still resolve.
+  // flagship-promotion pattern as kimi → k2.7. Explicit pins still resolve.
   assert.equal(resolveModel('grok'), 'xai/grok-4.3');
   assert.equal(resolveModel('grok-3'), 'xai/grok-3');
   assert.equal(resolveModel('grok-4'), 'xai/grok-4-0709');

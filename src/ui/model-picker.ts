@@ -104,13 +104,15 @@ export const MODEL_SHORTCUTS: Record<string, string> = {
   'glm-5': 'zai/glm-5',
   'glm-turbo': 'zai/glm-5-turbo',
   'glm5': 'zai/glm-5.1',
-  kimi: 'moonshot/kimi-k2.6',
+  kimi: 'moonshot/kimi-k2.7',
+  'k2.7': 'moonshot/kimi-k2.7',
+  // K2.6 demoted 2026-06 (gateway flagship is K2.7) but still routes — the
+  // `k2.6` pin keeps working for anyone who wants it explicitly.
   'k2.6': 'moonshot/kimi-k2.6',
-  // K2.5 was retired by the gateway in favor of K2.6 (256K ctx, vision +
-  // reasoning, $0.95 in / $4 out — strictly better in every dimension).
-  // The aliases stay so muscle memory keeps working but resolve to K2.6.
-  'kimi-k2.5': 'moonshot/kimi-k2.6',
-  'k2.5': 'moonshot/kimi-k2.6',
+  // K2.5 was retired by the gateway. Aliases stay so muscle memory keeps
+  // working but resolve to the current Kimi flagship (K2.7).
+  'kimi-k2.5': 'moonshot/kimi-k2.7',
+  'k2.5': 'moonshot/kimi-k2.7',
 };
 
 /**
@@ -197,7 +199,7 @@ export const PICKER_CATEGORIES: ModelCategory[] = [
       { id: 'google/gemini-2.5-flash',             shortcut: 'flash',    label: 'Gemini 2.5 Flash',    price: '$0.3/$2.5' },
       // Re-aliased to V4 Flash Chat upstream — context 1M, price 30% lower.
       { id: 'deepseek/deepseek-chat',              shortcut: 'deepseek', label: 'DeepSeek V4 Flash Chat', price: '$0.2/$0.4' },
-      { id: 'moonshot/kimi-k2.6',                  shortcut: 'kimi',     label: 'Kimi K2.6',           price: '$0.95/$4' },
+      { id: 'moonshot/kimi-k2.7',                  shortcut: 'kimi',     label: 'Kimi K2.7',           price: '$0.95/$4' },
       // GLM flat-rate promos fully ended 2026-06-06 — whole family per-token
       // now (glm-5 $0.60/$1.92; `glm` shortcut still pins flagship glm-5.1).
       { id: 'zai/glm-5',                           shortcut: 'glm-5',    label: 'GLM-5',               price: '$0.6/$1.92' },

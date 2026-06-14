@@ -69,7 +69,7 @@ export interface RoutingResult {
 const AUTO_TIERS: Record<Tier, { primary: string; fallback: string[] }> = {
   SIMPLE: {
     primary: 'deepseek/deepseek-v4-pro',
-    fallback: ['google/gemini-2.5-flash', 'moonshot/kimi-k2.6', 'deepseek/deepseek-chat'],
+    fallback: ['google/gemini-2.5-flash', 'moonshot/kimi-k2.7', 'deepseek/deepseek-chat'],
   },
   MEDIUM: {
     primary: 'deepseek/deepseek-v4-pro',

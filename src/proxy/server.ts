@@ -209,11 +209,13 @@ const MODEL_SHORTCUTS: Record<string, string> = {
   glm: 'zai/glm-5.1',
   'glm-turbo': 'zai/glm-5-turbo',
   'glm5': 'zai/glm-5.1',
-  kimi: 'moonshot/kimi-k2.6',
+  kimi: 'moonshot/kimi-k2.7',
+  'k2.7': 'moonshot/kimi-k2.7',
+  // K2.6 demoted 2026-06 (flagship is K2.7) but still routes — `k2.6` pins it.
   'k2.6': 'moonshot/kimi-k2.6',
-  // K2.5 retired by the gateway — aliases resolve to K2.6 for muscle memory.
-  'kimi-k2.5': 'moonshot/kimi-k2.6',
-  'k2.5': 'moonshot/kimi-k2.6',
+  // K2.5 retired — aliases resolve to the current flagship for muscle memory.
+  'kimi-k2.5': 'moonshot/kimi-k2.7',
+  'k2.5': 'moonshot/kimi-k2.7',
 };
 
 // Model pricing now uses shared source from src/pricing.ts

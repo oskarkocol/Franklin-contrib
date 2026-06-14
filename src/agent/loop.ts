@@ -1533,7 +1533,7 @@ export async function interactiveSession(
             // Excludes nvidia/* and *-coder-* — they're the source population.
             const TOOL_USE_FALLBACK_MODELS = [
               'anthropic/claude-haiku-4.5',
-              'moonshot/kimi-k2.6',
+              'moonshot/kimi-k2.7',
               'openai/gpt-5',
               'anthropic/claude-sonnet-4.6',
             ];
