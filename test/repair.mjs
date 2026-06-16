@@ -17,6 +17,8 @@ const {
   ToolCallRepair,
 } = await import('../dist/agent/repair/index.js');
 
+const { CORE_TOOL_NAMES } = await import('../dist/tools/tool-categories.js');
+
 // ─── flatten ─────────────────────────────────────────────────────────────
 
 test('analyzeSchema: shallow schema does not trigger flatten', () => {
@@ -203,6 +205,30 @@ test('scavengeToolCalls: parameters alias works on nested OpenAI shape too', () 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].name, 'Bash');
   assert.deepEqual(calls[0].input, { command: 'ls' });
+});
+
+test('regression: free-DeepSeek photo leaks recover against real CORE allowlist', () => {
+  // The exact strings from the 2026-06-16 bug report photos. Guards the
+  // cross-module invariant: WebSearch + ActivateTool must stay in
+  // CORE_TOOL_NAMES, else scavenge silently fails to recover their leaks.
+  const repair = new ToolCallRepair({ allowedToolNames: CORE_TOOL_NAMES });
+  const photo1 = repair.process(
+    [],
+    null,
+    '{"type": "function", "name": "activate_tool", "parameters": {"names": ["search_prediction_markets"]}}',
+  );
+  assert.equal(photo1.report.scavenged, 1);
+  assert.equal(photo1.calls[0].name, 'ActivateTool');
+  assert.deepEqual(photo1.calls[0].input, { names: ['search_prediction_markets'] });
+
+  const photo2 = repair.process(
+    [],
+    null,
+    '{"type": "function", "name": "web_search", "parameters": {"query": "mattwong.eth portfolio"}}',
+  );
+  assert.equal(photo2.report.scavenged, 1);
+  assert.equal(photo2.calls[0].name, 'WebSearch');
+  assert.deepEqual(photo2.calls[0].input, { query: 'mattwong.eth portfolio' });
 });
 
 test('scavengeToolCalls: unknown tool names are rejected', () => {
