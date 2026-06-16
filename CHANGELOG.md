@@ -1,5 +1,15 @@
 # Changelog
 
+## Franklin Agent 3.29.2 — execute (not just hide) leaked tool calls; cover more leak shapes
+
+Follow-up to 3.29.1 after an end-to-end adversarial pass over the tool-call leak path. 3.29.1 made the scavenger *recognize* the free-DeepSeek leak shape, but a separate streaming-layer guard was silently dropping the most common case before the scavenger ever ran.
+
+- **Suppress/scavenge coordination (the real photo bug).** When a weak model emits a tool call as a *bare* JSON-only text block, the streaming guard (`isRoleplayedJsonToolCallText`) held it out of the UI and then **discarded** it — so the scavenger had nothing to recover and the agent just burned a turn and switched models. The client now keeps that held text in the turn's `content` (still never streamed to the UI), and the loop scavenges it into a real `tool_use` and executes it. If no valid call can be recovered, the loop strips the text, preserving the old "non-productive → switch model" recovery. Net effect: the bare-JSON case now *runs the tool* instead of showing nothing.
+- **OpenAI `tool_calls` envelope.** The scavenger now unwraps a leaked `{"tool_calls":[…]}` assistant-message envelope (and legacy `{"function_call":{…}}`), recovering each call — previously the outer wrapper parsed to nothing and the inner calls were skipped.
+- **Provider-namespaced names.** `functions.web_search` / `tools.web_search` resolve to the registry name by stripping the namespace prefix, on top of 3.29.1's case/separator-insensitive matching.
+
+Probed 17 leak shapes against the real `CORE_TOOL_NAMES` allowlist; the three gaps above are closed and covered by regression tests (repair + a `complete()`-level streaming test). Python-call syntax (`web_search(query="x")`) remains intentionally unsupported — parsing free-form call syntax out of prose risks false positives.
+
 ## Franklin Agent 3.29.1 — recover tool calls leaked by the free DeepSeek model
 
 The free DeepSeek default leaks tool calls into the text channel as flat OpenAI-style JSON — `{"type":"function","name":"web_search","parameters":{...}}` — with names rewritten to snake_case. The scavenger recognized the nested OpenAI shape and the `arguments` key, but not this flat `parameters` variant, and its allowlist check was exact-match, so snake_case names never matched the PascalCase registry. The leak fell through unrecovered: the raw JSON rendered as the agent's answer and no tool ran (e.g. "show me X's portfolio" printed a `web_search` call instead of searching).

@@ -1136,10 +1136,17 @@ export class ModelClient {
             }
             if (currentText) {
               if (textEmission.mode === 'hold' && isRoleplayedJsonToolCallText(currentText)) {
+                // A roleplayed JSON tool call. Do NOT stream it to the UI,
+                // but DO keep it in `collected` so the loop's scavenge pass
+                // (src/agent/repair/scavenge.ts) can turn it into a real
+                // tool_use and execute it. If scavenge can't recover a valid
+                // call, the loop strips this text, restoring the old
+                // "non-productive → switch model" recovery.
+                collected.push({ type: 'text', text: currentText } as TextSegment);
                 if (this.debug) {
                   console.error(
                     `[franklin] Model ${request.model} emitted a raw JSON function-call object as text. ` +
-                    'Treating it as non-productive output so recovery can try another model.',
+                    'Held from display; loop will scavenge it into a tool_use or strip it.',
                   );
                 }
               } else if (textEmission.mode === 'hold' && isNemotronProse) {
@@ -1224,10 +1231,13 @@ export class ModelClient {
     }
     if (currentText) {
       if (textEmission.mode === 'hold' && isRoleplayedJsonToolCallText(currentText)) {
+        // See the matching branch in content_block_stop: keep it for the
+        // loop's scavenge pass instead of dropping it.
+        collected.push({ type: 'text', text: currentText });
         if (this.debug) {
           console.error(
             `[franklin] Model ${request.model} emitted a raw JSON function-call object as text. ` +
-            'Treating it as non-productive output so recovery can try another model.',
+            'Held from display; loop will scavenge it into a tool_use or strip it.',
           );
         }
       } else if (textEmission.mode === 'hold' && isNemotronProse) {

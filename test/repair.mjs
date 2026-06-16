@@ -207,6 +207,32 @@ test('scavengeToolCalls: parameters alias works on nested OpenAI shape too', () 
   assert.deepEqual(calls[0].input, { command: 'ls' });
 });
 
+test('scavengeToolCalls: OpenAI tool_calls envelope {tool_calls:[...]}', () => {
+  // Some gateway models leak the whole assistant message JSON as text.
+  const text =
+    '{"tool_calls":[{"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\\"query\\":\\"x\\"}"}}]}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'WebSearch');
+  assert.deepEqual(calls[0].input, { query: 'x' });
+});
+
+test('scavengeToolCalls: tool_calls envelope with multiple calls', () => {
+  const text =
+    '{"tool_calls":[{"type":"function","function":{"name":"bash","arguments":{"command":"ls"}}},' +
+    '{"type":"function","function":{"name":"read","arguments":{"file_path":"/a"}}}]}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((c) => c.name).sort(), ['Bash', 'Read']);
+});
+
+test('scavengeToolCalls: provider-namespaced name functions.web_search', () => {
+  const text = '{"type":"function","name":"functions.web_search","parameters":{"query":"x"}}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'WebSearch');
+});
+
 test('regression: free-DeepSeek photo leaks recover against real CORE allowlist', () => {
   // The exact strings from the 2026-06-16 bug report photos. Guards the
   // cross-module invariant: WebSearch + ActivateTool must stay in

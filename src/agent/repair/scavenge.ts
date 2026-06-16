@@ -66,8 +66,8 @@ export function scavengeToolCalls(
   const nonDsml = stripDsmlBlocks(text);
   for (const candidate of iterateJsonObjects(nonDsml)) {
     if (out.length >= max) break;
-    const call = coerceToInvocation(candidate, opts.allowedNames);
-    if (call) {
+    for (const call of coerceToInvocations(candidate, opts.allowedNames)) {
+      if (out.length >= max) break;
       out.push(call);
       notes.push(`scavenged call: ${call.name}`);
     }
@@ -154,18 +154,47 @@ function* iterateJsonObjects(text: string): Generator<string> {
   }
 }
 
-function coerceToInvocation(
+function coerceToInvocations(
   candidateJson: string,
   allowedNames: ReadonlySet<string>,
-): CapabilityInvocation | null {
+): CapabilityInvocation[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(candidateJson);
   } catch {
-    return null;
+    return [];
   }
-  if (!parsed || typeof parsed !== 'object') return null;
+  if (!parsed || typeof parsed !== 'object') return [];
   const obj = parsed as Record<string, unknown>;
+
+  // Envelope A — OpenAI assistant message { tool_calls: [ {...}, ... ] }.
+  // Gateway models that lack native tool-calling sometimes dump the whole
+  // assistant-message JSON into the text channel.
+  if (Array.isArray(obj.tool_calls)) {
+    const calls: CapabilityInvocation[] = [];
+    for (const tc of obj.tool_calls) {
+      const c = coerceObj(tc, allowedNames);
+      if (c) calls.push(c);
+    }
+    return calls;
+  }
+
+  // Envelope B — legacy single { function_call: { name, arguments } }.
+  if (obj.function_call && typeof obj.function_call === 'object') {
+    const c = coerceObj({ type: 'function', function: obj.function_call }, allowedNames);
+    return c ? [c] : [];
+  }
+
+  const c = coerceObj(obj, allowedNames);
+  return c ? [c] : [];
+}
+
+function coerceObj(
+  value: unknown,
+  allowedNames: ReadonlySet<string>,
+): CapabilityInvocation | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
 
   // Pattern 1 — { name, arguments } (Anthropic-ish flat form) AND the flat
   // OpenAI leak { type: "function", name, parameters } emitted by the free
@@ -218,9 +247,16 @@ function resolveAllowedName(
 ): string | null {
   if (!name || typeof name !== 'string') return null;
   if (allowedNames.has(name)) return name;
-  const target = normalizeName(name);
-  for (const allowed of allowedNames) {
-    if (normalizeName(allowed) === target) return allowed;
+  // Try the name as-is, then with any provider namespace stripped
+  // (`functions.web_search` / `tools.web_search` → `web_search`), which
+  // Gemini- and OpenAI-style function declarations sometimes prepend.
+  const candidates = [name];
+  if (name.includes('.')) candidates.push(name.slice(name.lastIndexOf('.') + 1));
+  for (const candidate of candidates) {
+    const target = normalizeName(candidate);
+    for (const allowed of allowedNames) {
+      if (normalizeName(allowed) === target) return allowed;
+    }
   }
   return null;
 }

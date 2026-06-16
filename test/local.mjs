@@ -2853,6 +2853,33 @@ test('streamCompletion: 429 response with Retry-After header tags the error mess
   }
 });
 
+test('complete: bare roleplayed-JSON tool call is held from UI but kept for scavenge', async () => {
+  // The exact photo-bug shape: a weak model emits a tool call as a bare
+  // JSON-only text block. It must NOT stream to the UI, but it MUST survive
+  // in `content` so the loop's scavenge pass can turn it into a tool_use.
+  // Regression guard for the suppress-vs-scavenge coordination fix.
+  const { ModelClient } = await import('../dist/agent/llm.js');
+  const json = '{"type":"function","name":"web_search","parameters":{"query":"x"}}';
+  const client = new ModelClient({ apiUrl: 'http://test.invalid', chain: 'base' });
+  client.streamCompletion = async function* () {
+    yield { kind: 'content_block_start', payload: { content_block: { type: 'text' } } };
+    yield { kind: 'content_block_delta', payload: { delta: { type: 'text_delta', text: json.slice(0, 20) } } };
+    yield { kind: 'content_block_delta', payload: { delta: { type: 'text_delta', text: json.slice(20) } } };
+    yield { kind: 'content_block_stop', payload: {} };
+    yield { kind: 'message_delta', payload: { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 20 } } };
+  };
+  const streamed = [];
+  const res = await client.complete(
+    { model: 'nvidia/deepseek-v4-flash', messages: [], tools: [] },
+    undefined,
+    undefined,
+    (d) => { if (d.type === 'text') streamed.push(d.text); },
+  );
+  assert.equal(streamed.join(''), '', 'roleplayed JSON must not be streamed to the UI');
+  const text = res.content.filter(p => p.type === 'text').map(p => p.text).join('');
+  assert.equal(text, json, 'roleplayed JSON must be kept in content for scavenge');
+});
+
 // ─── payment_rejected category: signed payment verified-and-rejected ──
 //
 // Verified 2026-05-04 in a screenshot: ExaSearch failed with

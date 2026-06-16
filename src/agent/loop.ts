@@ -3,7 +3,7 @@
  * The core reasoning-action cycle: prompt → model → extract capabilities → execute → repeat.
  */
 
-import { ModelClient } from './llm.js';
+import { ModelClient, isRoleplayedJsonToolCallText } from './llm.js';
 import { autoCompactIfNeeded, forceCompact, microCompact, projectCompactionSavings } from './compact.js';
 import { estimateHistoryTokens, updateActualTokens, resetTokenAnchor, getAnchoredTokenCount, getContextWindow, setEstimationModel } from './tokens.js';
 import { handleSlashCommand } from './commands.js';
@@ -1510,6 +1510,17 @@ export async function interactiveSession(
               `[franklin] scavenged ${repaired.report.scavenged} leaked tool call(s) from ${config.model}: ${repaired.report.notes.join('; ')}`,
             );
           }
+
+          // Strip pure roleplayed-JSON tool-call text parts. The LLM client
+          // holds these out of the live stream (never shown) but keeps them
+          // in `content` so the scavenge above can recover the call. Whether
+          // or not a call was recovered, the raw JSON must not linger as the
+          // assistant's "answer" — drop it. When nothing was scavenged this
+          // also empties the turn, so the empty-response recovery below can
+          // switch models, preserving the prior behavior.
+          responseParts = responseParts.filter(
+            p => !(p.type === 'text' && isRoleplayedJsonToolCallText((p as TextSegment).text)),
+          );
         }
 
         // ── Empty response recovery ──
