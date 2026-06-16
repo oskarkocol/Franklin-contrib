@@ -54,9 +54,10 @@ export function scavengeToolCalls(
   // into the content channel).
   for (const invoke of iterateDsmlInvokes(text)) {
     if (out.length >= max) break;
-    if (!opts.allowedNames.has(invoke.name)) continue;
-    out.push(makeInvocation(invoke.name, invoke.args));
-    notes.push(`scavenged DSML call: ${invoke.name}`);
+    const resolved = resolveAllowedName(invoke.name, opts.allowedNames);
+    if (!resolved) continue;
+    out.push(makeInvocation(resolved, invoke.args));
+    notes.push(`scavenged DSML call: ${resolved}`);
   }
 
   // Pattern B — raw JSON objects in the three canonical shapes. Strip
@@ -166,9 +167,15 @@ function coerceToInvocation(
   if (!parsed || typeof parsed !== 'object') return null;
   const obj = parsed as Record<string, unknown>;
 
-  // Pattern 1 — { name, arguments } (Anthropic-ish flat form).
-  if (typeof obj.name === 'string' && allowedNames.has(obj.name)) {
-    return makeInvocation(obj.name, normalizeArgs(obj.arguments));
+  // Pattern 1 — { name, arguments } (Anthropic-ish flat form) AND the flat
+  // OpenAI leak { type: "function", name, parameters } emitted by the free
+  // DeepSeek model — both carry the name at the top level. Args land under
+  // `arguments` or `parameters` depending on the model's chat template.
+  if (typeof obj.name === 'string') {
+    const resolved = resolveAllowedName(obj.name, allowedNames);
+    if (resolved) {
+      return makeInvocation(resolved, normalizeArgs(obj.arguments ?? obj.parameters));
+    }
   }
 
   // Pattern 2 — OpenAI-style { type: "function", function: { name, arguments } }.
@@ -178,16 +185,43 @@ function coerceToInvocation(
     typeof obj.function === 'object'
   ) {
     const fn = obj.function as Record<string, unknown>;
-    if (typeof fn.name === 'string' && allowedNames.has(fn.name)) {
-      return makeInvocation(fn.name, normalizeArgs(fn.arguments));
+    const resolved = typeof fn.name === 'string' ? resolveAllowedName(fn.name, allowedNames) : null;
+    if (resolved) {
+      return makeInvocation(resolved, normalizeArgs(fn.arguments ?? fn.parameters));
     }
   }
 
   // Pattern 3 — { tool_name, tool_args } (R1 free-form variant).
-  if (typeof obj.tool_name === 'string' && allowedNames.has(obj.tool_name)) {
-    return makeInvocation(obj.tool_name, normalizeArgs(obj.tool_args));
+  if (typeof obj.tool_name === 'string') {
+    const resolved = resolveAllowedName(obj.tool_name, allowedNames);
+    if (resolved) {
+      return makeInvocation(resolved, normalizeArgs(obj.tool_args ?? obj.tool_parameters));
+    }
   }
 
+  return null;
+}
+
+/** Collapse a tool name to a comparison key: lowercase, drop separators.
+ *  `activate_tool` / `web_search` → `activatetool` / `websearch`. */
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[_\-\s]/g, '');
+}
+
+/** Resolve a leaked tool name to its canonical registry spelling. Exact
+ *  match wins; otherwise a separator/case-insensitive match lets models
+ *  that rewrite names to OpenAI snake_case (`web_search` → `WebSearch`)
+ *  still be recovered. Returns null if no allowed tool matches. */
+function resolveAllowedName(
+  name: string | null | undefined,
+  allowedNames: ReadonlySet<string>,
+): string | null {
+  if (!name || typeof name !== 'string') return null;
+  if (allowedNames.has(name)) return name;
+  const target = normalizeName(name);
+  for (const allowed of allowedNames) {
+    if (normalizeName(allowed) === target) return allowed;
+  }
   return null;
 }
 

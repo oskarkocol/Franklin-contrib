@@ -175,6 +175,36 @@ test('scavengeToolCalls: Pattern 3 — {tool_name, tool_args} R1 form', () => {
   assert.deepEqual(calls[0].input.old_string, 'x');
 });
 
+test('scavengeToolCalls: Pattern 4 — flat {type:function, name, parameters}', () => {
+  // DeepSeek free model leak shape: flat function object, args under
+  // `parameters`, name in OpenAI snake_case. Both photos in the bug report.
+  const text =
+    '{"type": "function", "name": "web_search", "parameters": {"query": "mattwong.eth portfolio"}}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'WebSearch');
+  assert.deepEqual(calls[0].input, { query: 'mattwong.eth portfolio' });
+});
+
+test('scavengeToolCalls: snake_case name resolves to registry PascalCase', () => {
+  const allowed = new Set(['ActivateTool', 'WebSearch']);
+  const text =
+    '{"type": "function", "name": "activate_tool", "parameters": {"names": ["WebSearch"]}}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: allowed });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'ActivateTool');
+  assert.deepEqual(calls[0].input, { names: ['WebSearch'] });
+});
+
+test('scavengeToolCalls: parameters alias works on nested OpenAI shape too', () => {
+  const text =
+    '{"type":"function","function":{"name":"bash","parameters":{"command":"ls"}}}';
+  const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'Bash');
+  assert.deepEqual(calls[0].input, { command: 'ls' });
+});
+
 test('scavengeToolCalls: unknown tool names are rejected', () => {
   const text = '{"name":"NotARealTool","arguments":{}}';
   const { calls } = scavengeToolCalls(text, { allowedNames: ALLOWED });

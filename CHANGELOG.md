@@ -1,5 +1,12 @@
 # Changelog
 
+## Franklin Agent 3.29.1 — recover tool calls leaked by the free DeepSeek model
+
+The free DeepSeek default leaks tool calls into the text channel as flat OpenAI-style JSON — `{"type":"function","name":"web_search","parameters":{...}}` — with names rewritten to snake_case. The scavenger recognized the nested OpenAI shape and the `arguments` key, but not this flat `parameters` variant, and its allowlist check was exact-match, so snake_case names never matched the PascalCase registry. The leak fell through unrecovered: the raw JSON rendered as the agent's answer and no tool ran (e.g. "show me X's portfolio" printed a `web_search` call instead of searching).
+
+- **Flat function shape + `parameters` alias.** `coerceToInvocation` now recovers `{type:"function", name, parameters}` and accepts `parameters` wherever `arguments` was expected, across all scavenge patterns (flat, nested OpenAI, R1 `tool_args`, DSML).
+- **Tolerant name resolution.** Leaked names resolve to the canonical registry spelling via a separator/case-insensitive match (`activate_tool` → `ActivateTool`, `web_search` → `WebSearch`); unknown names are still rejected.
+
 ## Franklin Agent 3.29.0 — remote MCP (HTTP/OAuth), per-server tool filtering, unified skill registry
 
 Five long-standing gaps in the MCP and Skills layers, closed in one refactor. All changes are additive — existing stdio MCP configs and bundled skills keep working.
