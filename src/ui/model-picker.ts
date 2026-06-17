@@ -64,7 +64,7 @@ export const MODEL_SHORTCUTS: Record<string, string> = {
   'grok-4.1': 'xai/grok-4-1-fast-reasoning',
   // DeepSeek — paid SKUs route through deepseek/* (gateway aliases serve V4
   // Flash modes upstream); free tier routes through nvidia/*.
-  deepseek: 'deepseek/deepseek-chat',     // V4 Flash Chat (paid, $0.20/$0.40)
+  deepseek: 'deepseek/deepseek-chat',     // V4 Flash Chat (paid, $0.14/$0.28)
   r1: 'deepseek/deepseek-reasoner',       // V4 Flash Reasoner (paid)
   // V4 Pro: paid flagship, 1.6T MoE / 49B active, 1M ctx, 75% launch promo.
   'deepseek-v4-pro': 'deepseek/deepseek-v4-pro',
@@ -187,7 +187,7 @@ export const PICKER_CATEGORIES: ModelCategory[] = [
       // after 2026-05-31. 1M context, 1.6T MoE → punches up to GPT-5.5/Opus
       // on hard tasks at <1/10 the price.
       { id: 'deepseek/deepseek-v4-pro',      shortcut: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro',    price: '$0.435/$0.87', highlight: true },
-      { id: 'deepseek/deepseek-reasoner',    shortcut: 'r1',           label: 'DeepSeek V4 Flash R.',  price: '$0.2/$0.4' },
+      { id: 'deepseek/deepseek-reasoner',    shortcut: 'r1',           label: 'DeepSeek V4 Flash R.',  price: '$0.14/$0.28' },
       { id: 'xai/grok-4-1-fast-reasoning',   shortcut: 'grok-fast',    label: 'Grok 4.1 Fast R.',      price: '$0.2/$0.5' },
     ],
   },
@@ -198,7 +198,7 @@ export const PICKER_CATEGORIES: ModelCategory[] = [
       { id: 'openai/gpt-5-mini',                   shortcut: 'mini',     label: 'GPT-5 Mini',          price: '$0.25/$2' },
       { id: 'google/gemini-2.5-flash',             shortcut: 'flash',    label: 'Gemini 2.5 Flash',    price: '$0.3/$2.5' },
       // Re-aliased to V4 Flash Chat upstream — context 1M, price 30% lower.
-      { id: 'deepseek/deepseek-chat',              shortcut: 'deepseek', label: 'DeepSeek V4 Flash Chat', price: '$0.2/$0.4' },
+      { id: 'deepseek/deepseek-chat',              shortcut: 'deepseek', label: 'DeepSeek V4 Flash Chat', price: '$0.14/$0.28' },
       { id: 'moonshot/kimi-k2.7',                  shortcut: 'kimi',     label: 'Kimi K2.7',           price: '$0.95/$4' },
       // GLM flat-rate promos fully ended 2026-06-06 — whole family per-token
       // now (glm-5 $0.60/$1.92; `glm` shortcut still pins flagship glm-5.1).
