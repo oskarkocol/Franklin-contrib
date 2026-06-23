@@ -127,14 +127,16 @@ export async function prefetchForIntent(
     const query = intent.assetClass === 'stock'
       ? `Why did ${intent.symbol} stock move over the past week? Recent news and catalysts for ${intent.symbol} as of today.`
       : `What are the most important recent news events affecting ${intent.symbol} cryptocurrency in the past week?`;
-    tasks.push(exaAnswerTry(query, client).then(snippet => {
-      if (!snippet) {
-        return { ok: false, line: `- Recent ${intent.symbol} news: ExaAnswer lookup failed`, cost: 0 };
+    tasks.push(exaAnswerTry(query, client).then(({ text, costUsd }) => {
+      if (!text) {
+        // costUsd is non-zero only when a paid call actually settled but came
+        // back empty — count it so spend telemetry never under-reports USDC.
+        return { ok: false, line: `- Recent ${intent.symbol} news: ExaAnswer lookup failed`, cost: costUsd };
       }
       return {
         ok: true,
-        line: `- Recent ${intent.symbol} news (ExaAnswer synthesized):\n  ${snippet.replace(/\n/g, '\n  ')}`,
-        cost: 0.01,
+        line: `- Recent ${intent.symbol} news (ExaAnswer synthesized):\n  ${text.replace(/\n/g, '\n  ')}`,
+        cost: costUsd,
       };
     }));
   }
@@ -159,8 +161,36 @@ export async function prefetchForIntent(
   return { contextBlock, statusLine, costUsd: cost, anyOk };
 }
 
-/** Thin wrapper: call ExaAnswer via the gateway, return first-paragraph text or null. */
-async function exaAnswerTry(query: string, client: ModelClient): Promise<string | null> {
+/** Fallback per-call ExaAnswer estimate when the gateway omits costDollars. */
+const EXA_ANSWER_EST_USD = 0.01;
+
+interface ExaAnswerWire {
+  answer?: string;
+  costDollars?: { total?: number };
+  /** Legacy/proxied deployments nest the payload here; the live gateway is top-level. */
+  data?: ExaAnswerWire;
+}
+
+/**
+ * Read an ExaAnswer response through BOTH wire shapes — the live BlockRun
+ * gateway returns `{ answer, costDollars }` at the TOP level, while older or
+ * proxied deployments nest them under `data`. This mirrors the `res.data ?? res`
+ * read in src/tools/exa.ts; this prefetch path is the twin of the ExaAnswer
+ * tool and historically drifted out of sync, paying the USDC then dropping the
+ * answer. Exported for regression tests. `paid` records whether a real x402
+ * charge settled, so a paid-but-empty answer still counts against spend.
+ */
+export function readExaAnswer(raw: unknown, paid: boolean): { text: string | null; costUsd: number } {
+  const body = (raw ?? {}) as ExaAnswerWire;
+  const b = body.data ?? body;
+  const text = (b.answer || '').slice(0, 600).trim() || null;
+  const reported = typeof b.costDollars?.total === 'number' ? b.costDollars.total : undefined;
+  const costUsd = reported ?? (paid ? EXA_ANSWER_EST_USD : 0);
+  return { text, costUsd };
+}
+
+/** Thin wrapper: call ExaAnswer via the gateway, return parsed text + real cost. */
+async function exaAnswerTry(query: string, client: ModelClient): Promise<{ text: string | null; costUsd: number }> {
   try {
     // Reuse the BlockRun gateway chat endpoint the ExaAnswer tool already uses.
     // We inline the request rather than invoke the capability through the full
@@ -177,7 +207,7 @@ async function exaAnswerTry(query: string, client: ModelClient): Promise<string 
     });
     if (res.status === 402) {
       const payHdr = await extractPaymentReq(res);
-      if (!payHdr) return null;
+      if (!payHdr) return { text: null, costUsd: 0 };
       const { getOrCreateWallet, getOrCreateSolanaWallet, createPaymentPayload, createSolanaPaymentPayload,
               parsePaymentRequired, extractPaymentDetails, solanaKeyToBytes, SOLANA_NETWORK } = await import('@blockrun/llm');
       const paymentRequired = parsePaymentRequired(payHdr);
@@ -215,15 +245,14 @@ async function exaAnswerTry(query: string, client: ModelClient): Promise<string 
       const res2 = await fetch(`${apiUrl}/v1/exa/answer`, {
         method: 'POST', headers, body: JSON.stringify({ query }),
       });
-      if (!res2.ok) return null;
-      const body = await res2.json() as { data?: { answer?: string } };
-      return (body.data?.answer || '').slice(0, 600).trim() || null;
+      if (!res2.ok) return { text: null, costUsd: 0 };
+      // A 200 here means the x402 charge settled — count it even if empty.
+      return readExaAnswer(await res2.json(), true);
     }
-    if (!res.ok) return null;
-    const body = await res.json() as { data?: { answer?: string } };
-    return (body.data?.answer || '').slice(0, 600).trim() || null;
+    if (!res.ok) return { text: null, costUsd: 0 };
+    return readExaAnswer(await res.json(), false);
   } catch {
-    return null;
+    return { text: null, costUsd: 0 };
   }
 }
 

@@ -21,7 +21,7 @@ import type { ContentLibrary } from '../content/library.js';
 import { checkImageBudget, recordImageAsset } from '../content/record-image.js';
 import { estimateImageCostUsd } from '../content/image-pricing.js';
 import { recordUsage } from '../stats/tracker.js';
-import { findModel, estimateCostUsd } from '../gateway-models.js';
+import { findModel, estimateCostUsd, type GatewayModel } from '../gateway-models.js';
 import { logger } from '../logger.js';
 
 interface ImageGenInput {
@@ -116,6 +116,27 @@ export const IMAGE_MODEL_SIZES: Record<string, string[]> = {
 };
 
 export const REFERENCE_IMAGE_MAX_BYTES = 4_000_000;
+
+/**
+ * Resolve the per-image USD cost used for the budget check, spend confirm, and
+ * asset record. Two sources, neither sufficient alone:
+ *   - the live catalog price is authoritative for models the static table omits
+ *     (closing the $0-budget bypass), but it is SIZE-BLIND — a single flat
+ *     per_image figure that ignores the larger, pricier tiers;
+ *   - the static table is SIZE-AWARE (e.g. gpt-image-1 is $0.02 at 1024x1024 but
+ *     $0.04 at 1536x1024) but only covers a handful of models.
+ * Take the HIGHER of the two so none of the three consumers ever undercounts the
+ * real charge for a large, non-1024 size. Exported for regression tests.
+ */
+export function resolveImageUnitCost(
+  catalogModel: GatewayModel | null,
+  model: string,
+  size: string,
+): number {
+  const catalogUsd = catalogModel ? estimateCostUsd(catalogModel, { quantity: 1 }) : 0;
+  const staticUsd = estimateImageCostUsd(model, size, 1);
+  return Math.max(catalogUsd, staticUsd);
+}
 
 /**
  * Normalize a reference image into a base64 data URI for the gateway. The
@@ -295,16 +316,19 @@ function buildExecute(deps: ImageGenDeps) {
       };
     }
 
-    // Resolve the authoritative per-image cost ONCE from the live gateway
-    // catalog (static estimate table as fallback). estimateImageCostUsd()
-    // returns 0 for any model not in its small static table, so without this
-    // a paid model not listed there would charge real USDC yet count $0
-    // against the content budget — bypassing the wallet cap entirely. Reused
-    // below for the spend confirm, usage stats, and asset recording.
-    const catalogModel = await findModel(imageModel);
-    const perImageUsd = catalogModel
-      ? estimateCostUsd(catalogModel, { quantity: 1 })
-      : estimateImageCostUsd(imageModel, imageSize, 1);
+    // Resolve the authoritative per-image cost ONCE, reused below for the
+    // budget check, spend confirm, usage stats, and asset recording. The
+    // catalog lookup is best-effort: a cold-cache fetch failure must NOT abort
+    // a consented paid generation, so degrade to the static estimate instead of
+    // letting findModel throw out of execute() (mirrors videogen's fallback).
+    let catalogModel: GatewayModel | null = null;
+    try {
+      catalogModel = await findModel(imageModel);
+    } catch {
+      // Catalog momentarily unreachable — resolveImageUnitCost falls back to
+      // the size-aware static table on its own.
+    }
+    const perImageUsd = resolveImageUnitCost(catalogModel, imageModel, imageSize);
 
     if (contentId && deps.library) {
       const decision = checkImageBudget(deps.library, contentId, imageModel, imageSize, n, perImageUsd * n);

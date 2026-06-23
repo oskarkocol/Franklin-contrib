@@ -1,5 +1,17 @@
 # Changelog
 
+## Franklin Agent 3.29.7 — finish the Exa wire-format fix (twin prefetch path) + budget-safety follow-ups
+
+A second multi-agent review of the 3.29.5/3.29.6 branch found that both the Exa wire-format fix and the image-budget fix each missed a path. This lands the adversarially-verified fixes:
+
+- **Exa wire-format fix completed in the prefetch twin path (wallet safety).** `src/agent/intent-prefetch.ts` `exaAnswerTry()` makes its *own* paid `/v1/exa/answer` call (separate from the ExaAnswer tool) and still read the dead `body.data?.answer` legacy shape — so against the live top-level gateway response it paid the USDC, **dropped the answer, and reported the spend as $0**. It now reads through both shapes (`readExaAnswer`, mirroring `exa.ts`) and counts the real `costDollars.total` (per-call estimate as fallback) even when a paid call returns empty, so news prefetch works again and spend telemetry stops under-reporting.
+- **ImageGen per-image cost is now size-aware (budget safety).** The 3.29.6 catalog-first resolution (`estimateCostUsd`) is *size-blind* — a single flat 1024 price — so large sizes (e.g. gpt-image-1 1536×1024, ~$0.04) were budget-checked, quoted, and recorded at the 1024 price (~$0.02), undercounting real USDC by up to 2×. New `resolveImageUnitCost` takes the higher of the size-blind catalog price (authoritative for models the static table omits) and the size-aware static estimate, so none of the budget check / spend confirm / asset record can undercount.
+- **ImageGen no longer hard-fails on a cold catalog hiccup.** The new unconditional `await findModel()` ran outside any try/catch; a cold-cache fetch failure aborted an already-consented paid generation. It now degrades to the static estimate.
+- **Crash-safe persistence hardened.** `storage/atomic.ts` now `fsync`s the temp file before `rename` and `fsync`s the directory after — durable across power loss, not just a process kill — and unlinks the orphan `.tmp` on a failed rename (the rest of the codebase already did this; the shared helper was the outlier).
+- **Honest comment.** The gateway-error-as-text branch in `loop.ts` claimed it "throws into the classifier and lets recovery handle it"; the code actually surfaces a terminal turn error and breaks. Comment corrected to match (the deliberate design — a transport-error string is never written into history as an answer).
+
+New no-spend regression tests cover the prefetch wire shape and the size-aware cost resolution. Verified: local suite 470/470.
+
 ## Franklin Agent 3.29.6 — post-audit hardening: budget safety, crash-safe persistence, error recovery, CI gate
 
 A multi-agent audit (run after the 3.29.5 Exa fix) surfaced and adversarially verified several issues. This lands the high-value, well-scoped ones:

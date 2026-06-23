@@ -103,3 +103,32 @@ test('loadPortfolio recovers from .bak when the live file is corrupt', async () 
     assert.ok(loaded, 'should recover the portfolio from .bak rather than zeroing P&L');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ── image cost resolution: size-aware, never undercounts a large tier ──────
+// The live catalog per_image price is a single flat 1024 figure; the static
+// table is size-aware. resolveImageUnitCost takes the higher of the two so the
+// budget check / spend confirm / asset record can't undercount a big size.
+test('resolveImageUnitCost prefers the size-aware price over a size-blind catalog flat', async () => {
+  const { resolveImageUnitCost } = await import('../dist/tools/imagegen.js');
+  // gpt-image-1 catalogued at the flat 1024 base ($0.02 → $0.021 w/ margin).
+  const catalog = { id: 'openai/gpt-image-1', billing_mode: 'per_image', pricing: { per_image: 0.02 } };
+  // Default 1024 size: catalog (with margin) wins.
+  assert.equal(resolveImageUnitCost(catalog, 'openai/gpt-image-1', '1024x1024'), 0.021);
+  // Large size really costs $0.04 — the size-blind catalog $0.021 must NOT win.
+  assert.equal(resolveImageUnitCost(catalog, 'openai/gpt-image-1', '1536x1024'), 0.04,
+    'large-tier charge must not be undercounted to the 1024 catalog price');
+});
+
+test('resolveImageUnitCost keeps the catalog price for a model absent from the static table', async () => {
+  const { resolveImageUnitCost } = await import('../dist/tools/imagegen.js');
+  // grok-imagine-image-pro is NOT in the static PRICE_TABLE (static → $0).
+  const catalog = { id: 'xai/grok-imagine-image-pro', billing_mode: 'per_image', pricing: { per_image: 0.07 } };
+  assert.equal(resolveImageUnitCost(catalog, 'xai/grok-imagine-image-pro', '1024x1024'), 0.0735,
+    'catalog price (closing the $0 bypass) survives when the static table omits the model');
+});
+
+test('resolveImageUnitCost falls back to the size-aware static estimate when the catalog is unavailable', async () => {
+  const { resolveImageUnitCost } = await import('../dist/tools/imagegen.js');
+  // catalogModel null simulates a cold-cache catalog fetch failure.
+  assert.equal(resolveImageUnitCost(null, 'openai/gpt-image-1', '1536x1024'), 0.04);
+});

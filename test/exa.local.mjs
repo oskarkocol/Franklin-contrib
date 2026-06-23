@@ -100,3 +100,33 @@ test('ExaSearch still parses a legacy { data: {...} } envelope (backward-compat)
       `legacy data-wrapped envelope must still parse:\n${r.output}`);
   } finally { restore(); }
 });
+
+// ── prefetch twin path (intent-prefetch.exaAnswerTry) ─────────────────────
+// The harness prefetch makes its OWN paid /v1/exa/answer call, separate from
+// the ExaAnswer tool. It must read the SAME top-level wire shape — historically
+// it lagged the tool fix and paid the $0.01 USDC then dropped the answer.
+test('readExaAnswer surfaces a TOP-LEVEL answer (the regression the prefetch path missed)', async () => {
+  const { readExaAnswer } = await import('../dist/agent/intent-prefetch.js');
+  const r = readExaAnswer({ answer: 'Circle (CRCL) rallied on stablecoin news.', costDollars: { total: 0.012 } }, true);
+  assert.equal(r.text, 'Circle (CRCL) rallied on stablecoin news.', 'top-level answer must not be dropped');
+  assert.equal(r.costUsd, 0.012, 'reports the gateway-reported cost');
+});
+
+test('readExaAnswer still reads a legacy data-wrapped answer', async () => {
+  const { readExaAnswer } = await import('../dist/agent/intent-prefetch.js');
+  const r = readExaAnswer({ data: { answer: 'Nested legacy answer.', costDollars: { total: 0.008 } } }, true);
+  assert.equal(r.text, 'Nested legacy answer.');
+  assert.equal(r.costUsd, 0.008);
+});
+
+test('readExaAnswer counts a paid-but-empty answer so spend is never under-reported', async () => {
+  const { readExaAnswer } = await import('../dist/agent/intent-prefetch.js');
+  // Paid 200 with no usable text + no reported cost → fall back to the estimate.
+  const paidEmpty = readExaAnswer({}, true);
+  assert.equal(paidEmpty.text, null);
+  assert.equal(paidEmpty.costUsd, 0.01, 'a settled x402 charge must still be counted');
+  // Unpaid (non-402 200 or failure) with no text → no phantom charge.
+  const unpaid = readExaAnswer({}, false);
+  assert.equal(unpaid.text, null);
+  assert.equal(unpaid.costUsd, 0, 'no payment → no cost booked');
+});

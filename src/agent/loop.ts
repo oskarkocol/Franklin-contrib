@@ -2057,8 +2057,10 @@ export async function interactiveSession(
       // single bracketed text block on a 200 OK. Persisting that as a real
       // assistant reply poisons history (the next turn sees an "answer" that
       // is actually a transport error) and triggers grounding-check retries
-      // that hit the same wall. Detect, throw into the classifier, and let
-      // the existing recovery flow handle it.
+      // that hit the same wall. We deliberately surface it as a terminal turn
+      // error and break — rather than re-feeding it through the retry/fallback
+      // flow — so a transport-error string is never written into history as an
+      // answer. (A real HTTP 429 still auto-falls-back via classifyAgentError.)
       const gatewayErr = looksLikeGatewayErrorAsText(responseParts);
       if (gatewayErr.match) {
         logger.error(
