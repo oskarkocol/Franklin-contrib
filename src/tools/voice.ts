@@ -347,32 +347,41 @@ export const voiceCallCapability: CapabilityHandler = {
         '/v1/voice/call', body, ctx, { tool: 'VoiceCall', priceUsd: 0.54 },
       );
       const callId = (res.call_id || res.id) as string | undefined;
+      // No call_id on a 200 means the call didn't actually start — surface it
+      // as an error instead of reporting "initiated" after the $0.54 charge,
+      // otherwise the agent tells the user it worked but can never poll it
+      // (parity with the missing-identifier guards in imagegen/videogen).
+      if (!callId) {
+        return {
+          output:
+            `VoiceCall: the gateway returned no call_id, so the call may not have started ` +
+            `(you may still have been charged $0.54 — check VoiceStatus / your balance).\n\n` +
+            '```json\n' + JSON.stringify(res, null, 2) + '\n```',
+          isError: true,
+        };
+      }
       // Persist a "queued" row so the panel sees the call before VoiceStatus polls.
       // Best-effort — if disk write fails we still surface the call_id to the agent.
-      if (callId) {
-        try {
-          callLog().append({
-            timestamp: Date.now(),
-            call_id: callId,
-            to: String(input.to),
-            from: String(input.from),
-            task: String(input.task),
-            voice: typeof input.voice === 'string' ? input.voice : undefined,
-            max_duration_min: typeof input.max_duration === 'number' ? input.max_duration : undefined,
-            language: typeof input.language === 'string' ? input.language : undefined,
-            status: normalizeStatus(res.status),
-            paid_usd: 0.54,
-            tx_hash: typeof res.tx_hash === 'string' ? res.tx_hash : undefined,
-          });
-        } catch { /* best-effort */ }
-      }
+      try {
+        callLog().append({
+          timestamp: Date.now(),
+          call_id: callId,
+          to: String(input.to),
+          from: String(input.from),
+          task: String(input.task),
+          voice: typeof input.voice === 'string' ? input.voice : undefined,
+          max_duration_min: typeof input.max_duration === 'number' ? input.max_duration : undefined,
+          language: typeof input.language === 'string' ? input.language : undefined,
+          status: normalizeStatus(res.status),
+          paid_usd: 0.54,
+          tx_hash: typeof res.tx_hash === 'string' ? res.tx_hash : undefined,
+        });
+      } catch { /* best-effort */ }
       return {
         output:
           `## Voice call initiated ($0.54 USDC charged)\n\n` +
-          (callId
-            ? `**call_id:** \`${callId}\`\n\nPoll with VoiceStatus call_id="${callId}" to get the ` +
-              `transcript and disposition. The call typically completes in 1–6 minutes.\n\n`
-            : '') +
+          `**call_id:** \`${callId}\`\n\nPoll with VoiceStatus call_id="${callId}" to get the ` +
+          `transcript and disposition. The call typically completes in 1–6 minutes.\n\n` +
           '```json\n' + JSON.stringify(res, null, 2) + '\n```',
       };
     } catch (err) {

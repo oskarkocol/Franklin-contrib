@@ -13,13 +13,11 @@
 
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
-  writeFileSync,
 } from 'node:fs';
-import { dirname } from 'node:path';
 
 import { ContentLibrary, type Content } from './library.js';
+import { atomicWriteFileSync } from '../storage/atomic.js';
 
 interface SerializedLibrary {
   version: 1;
@@ -28,9 +26,10 @@ interface SerializedLibrary {
 
 export function saveLibrary(lib: ContentLibrary, filePath: string): void {
   try {
-    mkdirSync(dirname(filePath), { recursive: true });
     const payload: SerializedLibrary = { version: 1, contents: lib.list() };
-    writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8');
+    // Atomic write so a crash mid-save can't truncate the library and lose
+    // the budget-load-bearing spentUsd (see storage/atomic.ts).
+    atomicWriteFileSync(filePath, JSON.stringify(payload, null, 2));
   } catch {
     // Persistence is best-effort; never block a capability call on disk
     // failure. The in-memory library stays authoritative until the next
@@ -39,6 +38,12 @@ export function saveLibrary(lib: ContentLibrary, filePath: string): void {
 }
 
 export function loadLibrary(filePath: string): ContentLibrary | null {
+  // Prefer the live file; fall back to the atomic-write backup if it's
+  // missing or corrupt rather than starting empty.
+  return readLibraryFile(filePath) ?? readLibraryFile(`${filePath}.bak`);
+}
+
+function readLibraryFile(filePath: string): ContentLibrary | null {
   if (!existsSync(filePath)) return null;
   try {
     const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as SerializedLibrary;

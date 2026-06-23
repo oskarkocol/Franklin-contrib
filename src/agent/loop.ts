@@ -1698,15 +1698,17 @@ export async function interactiveSession(
         }
 
         if (classified.isTransient && recoveryAttempts < effectiveMaxRetries) {
-          // Server-error streak guard: if the same model 5xx's twice in a row
-          // it's almost always an upstream incident, not a blip. Switch to
-          // the next routing fallback instead of waiting out 5 backoffs on a
-          // dead provider — same idea as the payment-failure auto-fallback
-          // below, but for transient server errors. Skipped for non-server
-          // transients (rate limits, network blips) where retry is the right
-          // call. Also skipped when the user picked a concrete model — they
-          // explicitly chose this one, so we shouldn't silently swap.
-          if (classified.category === 'server' && parseRoutingProfile(config.model)) {
+          // Server/overloaded streak guard: if the same model 5xx's or stays
+          // overloaded (529) twice in a row it's almost always an upstream
+          // incident, not a blip. Switch to the next routing fallback instead
+          // of waiting out the backoffs on a dead/busy provider — same idea
+          // as the payment-failure auto-fallback below. Skipped for other
+          // transients (rate limits, network blips) where in-place retry is
+          // the right call, and skipped when the user picked a concrete model
+          // — they explicitly chose this one, so we shouldn't silently swap.
+          // (An overloaded model's own suggestion text already says "/model
+          // to switch"; this does it automatically when routing is in auto.)
+          if ((classified.category === 'server' || classified.category === 'overloaded') && parseRoutingProfile(config.model)) {
             const streak = (serverErrorsByModel.get(resolvedModel) ?? 0) + 1;
             serverErrorsByModel.set(resolvedModel, streak);
             if (streak >= SERVER_ERROR_STREAK_BEFORE_SWITCH) {
@@ -1719,9 +1721,10 @@ export async function interactiveSession(
                 config.model = nextModel;
                 config.onModelChange?.(nextModel, 'system');
                 recoveryAttempts = 0;
+                const failKind = classified.category === 'overloaded' ? 'is overloaded' : "keeps 5xx'ing";
                 onEvent({
                   kind: 'text_delta',
-                  text: `\n*${resolvedModel} keeps 5xx'ing (${streak} in a row) — switching to ${nextModel}*\n`,
+                  text: `\n*${resolvedModel} ${failKind} (${streak} in a row) — switching to ${nextModel}*\n`,
                 });
                 continue;
               }

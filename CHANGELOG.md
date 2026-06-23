@@ -1,5 +1,17 @@
 # Changelog
 
+## Franklin Agent 3.29.6 — post-audit hardening: budget safety, crash-safe persistence, error recovery, CI gate
+
+A multi-agent audit (run after the 3.29.5 Exa fix) surfaced and adversarially verified several issues. This lands the high-value, well-scoped ones:
+
+- **Image budget bypass fixed (wallet safety).** `estimateImageCostUsd` returns $0 for any model not in its 5-entry static table, so paid image models not listed there (e.g. `xai/grok-imagine-image`, `zai/cogview-4`) charged real USDC but counted **$0** against the content budget cap — defeating the core spend guard. ImageGen now resolves the per-image cost from the live gateway catalog (`findModel` + `estimateCostUsd`, static table as fallback) and threads it through `checkImageBudget` / `recordImageAsset` / usage stats.
+- **Crash-safe persistence.** Portfolio (`trading/store.ts`) and content library (`content/store.ts`) were written with a truncating `writeFileSync`; a crash mid-write wiped cross-session P&L / budget `spentUsd`. New `storage/atomic.ts` does temp-write + atomic `rename` + a `.bak` snapshot, and both loaders fall back to `.bak` on corruption.
+- **VoiceCall no-`call_id` guard.** A 200 with no `call_id` now returns `isError` (parity with ImageGen/VideoGen) instead of reporting "initiated" after the $0.54 charge with no way to poll.
+- **Error recovery.** `error-classifier` now maps non-Anthropic context-overflow strings (`context_length_exceeded`, `context window`, `context_window`) to `context_limit` so reactive compaction fires; the agent loop's model auto-fallback now also triggers on `overloaded` (529) streaks, not just `server` 5xx.
+- **CI runs the tests.** `.github/workflows/ci.yml` now runs `npm test` (previously it only type-checked + built) — the exact gap that let the 3.29.5 Exa regression ship. New no-spend regression tests cover all of the above (`test/audit-batch.local.mjs`).
+
+Verified: local suite 464/464. Deferred to follow-ups (flagged in the audit, need broader changes / owner input): a single free-default-model source-of-truth constant, the gateway-error-as-text turn-kill recovery rewrite, payment-helper consolidation across ~13 tools, and concurrent-tool wallet reservations.
+
 ## Franklin Agent 3.29.5 — fix silently-broken Exa research tools (paid, returned nothing)
 
 All three Exa tools (`ExaSearch`, `ExaAnswer`, `ExaReadUrls`) paid $0.01–$0.002 USDC per call, received a valid `200` from the gateway, then **discarded the data and reported "no results."** The live gateway returns Exa payloads at the top level (`{ results }`, `{ answer }`), but the tool read them under a `data` wrapper (`res.data.results`) — matching the published docs, which disagree with the live API — so every field came back `undefined`. Users paid and got empty results.

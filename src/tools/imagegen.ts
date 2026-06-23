@@ -19,6 +19,7 @@ import type { CapabilityHandler, CapabilityResult, ExecutionScope } from '../age
 import { loadChain, API_URLS, VERSION } from '../config.js';
 import type { ContentLibrary } from '../content/library.js';
 import { checkImageBudget, recordImageAsset } from '../content/record-image.js';
+import { estimateImageCostUsd } from '../content/image-pricing.js';
 import { recordUsage } from '../stats/tracker.js';
 import { findModel, estimateCostUsd } from '../gateway-models.js';
 import { logger } from '../logger.js';
@@ -294,8 +295,19 @@ function buildExecute(deps: ImageGenDeps) {
       };
     }
 
+    // Resolve the authoritative per-image cost ONCE from the live gateway
+    // catalog (static estimate table as fallback). estimateImageCostUsd()
+    // returns 0 for any model not in its small static table, so without this
+    // a paid model not listed there would charge real USDC yet count $0
+    // against the content budget — bypassing the wallet cap entirely. Reused
+    // below for the spend confirm, usage stats, and asset recording.
+    const catalogModel = await findModel(imageModel);
+    const perImageUsd = catalogModel
+      ? estimateCostUsd(catalogModel, { quantity: 1 })
+      : estimateImageCostUsd(imageModel, imageSize, 1);
+
     if (contentId && deps.library) {
-      const decision = checkImageBudget(deps.library, contentId, imageModel, imageSize, n);
+      const decision = checkImageBudget(deps.library, contentId, imageModel, imageSize, n, perImageUsd * n);
       if (!decision.ok) {
         // Normal text output, not isError — the agent should adapt (smaller
         // size, different model, raise budget) rather than trigger retry.
@@ -315,8 +327,7 @@ function buildExecute(deps: ImageGenDeps) {
     // and generate straight away — the explicit "generate" action is consent.
     const autoApprove = process.env.FRANKLIN_MEDIA_AUTO_APPROVE_ALL === '1';
     if (!autoApprove && ctx.onAskUser) {
-      const m = await findModel(imageModel);
-      const est = m ? estimateCostUsd(m, { quantity: n }) : 0;
+      const est = perImageUsd * n;
       const priceNote = est > 0 ? ` for ~$${est.toFixed(2)}` : '';
       const countNote = n > 1 ? `${n} images` : 'an image';
       const answer = await ctx.onAskUser(
@@ -539,8 +550,7 @@ function buildExecute(deps: ImageGenDeps) {
     const latencyMs = Date.now() - callStartedAt;
     void (async () => {
       try {
-        const m = await findModel(imageModel);
-        const estCost = m ? estimateCostUsd(m, { quantity: items.length }) : 0;
+        const estCost = perImageUsd * items.length;
         recordUsage(imageModel, 0, 0, estCost, latencyMs);
       } catch { /* ignore stats errors */ }
     })();
@@ -558,6 +568,7 @@ function buildExecute(deps: ImageGenDeps) {
           imagePath: p,
           model: imageModel,
           size: imageSize,
+          costUsd: perImageUsd,
         });
         if (rec.ok) {
           attached++;

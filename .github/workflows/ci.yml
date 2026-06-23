@@ -29,5 +29,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Test
+        run: npm test
+
       - name: Verify dist output
         run: node dist/index.js --help

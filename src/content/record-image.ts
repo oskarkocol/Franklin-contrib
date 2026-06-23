@@ -21,6 +21,14 @@ export interface RecordImageAssetInput {
   imagePath: string;
   model: string;
   size: string;
+  /**
+   * Authoritative per-image USD cost resolved by the caller (e.g. from the
+   * live gateway catalog). When omitted, falls back to the static estimate
+   * table — which returns 0 for models it doesn't list, so callers spending
+   * real USDC on a paid model MUST pass this or the spend bypasses the
+   * content budget cap.
+   */
+  costUsd?: number;
 }
 
 export type RecordImageDecision =
@@ -40,12 +48,15 @@ export function checkImageBudget(
   model: string,
   size: string,
   count: number = 1,
+  // Total USD the caller already resolved for `count` images (live catalog).
+  // Falls back to the static estimate when omitted — see RecordImageAssetInput.
+  costUsdOverride?: number,
 ): { ok: true } | { ok: false; reason: string } {
   const content = library.get(contentId);
   if (!content) {
     return { ok: false, reason: `Content ${contentId} not found` };
   }
-  const cost = estimateImageCostUsd(model, size, count);
+  const cost = costUsdOverride ?? estimateImageCostUsd(model, size, count);
   if (content.spentUsd + cost > content.budgetUsd + 1e-9) {
     return {
       ok: false,
@@ -61,7 +72,7 @@ export function recordImageAsset(
   library: ContentLibrary,
   input: RecordImageAssetInput,
 ): RecordImageDecision {
-  const costUsd = estimateImageCostUsd(input.model, input.size);
+  const costUsd = input.costUsd ?? estimateImageCostUsd(input.model, input.size);
   const result = library.addAsset(input.contentId, {
     kind: 'image',
     source: input.model,

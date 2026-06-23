@@ -143,6 +143,9 @@ export function classifyAgentError(message: string): AgentErrorInfo {
   if (includesAny(err, [
     'prompt is too long',
     'context length',
+    'context_length_exceeded',   // OpenAI-style code, leaks via gateway for non-Anthropic models
+    'context window',
+    'context_window',
     'maximum context',
     'prompt too long',
     'token limit exceeded',
