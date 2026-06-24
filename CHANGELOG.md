@@ -1,5 +1,29 @@
 # Changelog
 
+## Franklin Agent 3.29.12 — close the 6 single-command bypasses from the 3.29.11 convergence verify (round-7)
+
+An 8-agent adversarial convergence verify of the 3.29.11 guards confirmed **6 more single-command holes** — two critical. Each was traced through the real classifier and reproduced before fixing. The unifying principle this round: a bash segment is only auto-approved ("safe") when its **full effect is statically visible** — any runtime indirection the classifier can't see now forces a prompt.
+
+- **Env-var prefix exec/loader hijack (CRITICAL).** `BASH_ENV=./evilrc ls` auto-approved arbitrary code execution: the guard blindly stripped every `NAME=value` token, so the base command resolved to a benign `ls` while `BASH_ENV` (sourced by every non-interactive `bash -c`), `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `PERL5OPT`, `NODE_OPTIONS`, `PATH`, `IFS`, etc. ran attacker code. Now only a small allowlist of locale/display vars (`LANG`, `LC_*`, `TZ`, `TERM`, …) may prefix a safe command; any other leading assignment prompts.
+- **`$VAR`-rooted glob wallet read (CRITICAL).** `cat $HOME/.bl*/.s*` evaded the `~`/`.`/`/`-rooted glob guard because it starts with `$`, then expanded into `~/.blockrun/.session` — zero-prompt wallet-key exfiltration. Parameter expansion (`$VAR`, `${VAR}`) is now treated as opaque exactly like `$(...)`. A non-expansion `$` (a `grep 'foo$'` anchor, `$5`) stays safe.
+- **Redirect write on git/npm/cargo/bun (HIGH).** `git status > ~/.bashrc` (overwrite a shell rc → RCE on next shell) auto-approved because the output-redirect check only ran for `SAFE_COMMANDS`; git/npm/cargo resolve through their own branches and skipped it. The redirect check now runs for **every** segment.
+- **Host-credential reads (MEDIUM).** `cat ~/.ssh/id_rsa`, `~/.aws/credentials`, `~/.gnupg/*`, gcloud tokens, `.npmrc`/`.pgpass`/`.netrc`, docker creds auto-approved secrets into context. Now mirrors the Write tool's dangerous-path block and prompts.
+- **`git config`/`git remote` writes (MEDIUM).** `git config core.pager "node evil.js"` (plants an exec hook fired on the next git invocation) and `git remote add` auto-approved as read-only subcommands. `config` is now safe only in get/list form; `remote` only in read form.
+- **SSRF cloud-metadata hostnames (MEDIUM).** `metadata.google.internal` (and `*.internal`, `metadata.goog`, AWS `instance-data`, NAT64-embedded `169.254.169.254`) resolve to the metadata IP at the OS layer, after the literal guard — now denied by name.
+
+New regression tests pin all six classes plus the benign controls (locale prefixes, regex anchors, read-form git, public hosts). Verified: local suite 500/500.
+
+## Franklin Agent 3.29.11 — close the remaining guard bypasses + media-write hole (final sweep)
+
+A final comprehensive sweep of the 3.29.10 guards found 7 more single-command holes (and a new class the prior rounds missed). Fixed at the architectural level rather than by patching more strings:
+
+- **Media tools could overwrite the wallet key (HIGH, new class).** `ImageGen`/`VideoGen`/`MusicGen` (and BrowserX screenshots) write to a caller-controlled `output_path` with **no** wallet-key guard — `output_path: "~/.blockrun/.session"` would brick the wallet. They now apply the same `isWalletKeyPath` guard the Read/Write/Edit tools use.
+- **bash-guard: separators.** Newline, CR, and a lone `&` (background) were not segment separators, so `pwd\nnpm install evil` / `pwd & node evil.js` auto-approved the injected command. All bash separators now split (fd-dups like `2>&1` unaffected).
+- **bash-guard: substitution & path-globs (the wallet-key class, finally).** `$(...)`, backticks, and `<(...)` run an inner command the classifier can't see, and a glob in a `~`/`.`/`/`-rooted path (`cat ~/.b*/.s*`) expands into `~/.blockrun` after the guard runs. Both now force a prompt — "fail toward prompting" for anything the classifier can't statically resolve. Bare cwd globs (`*.md`, `src/*.ts`) stay auto-safe.
+- **SSRF:** also block the Alibaba (`100.100.100.200`) and Oracle (`192.0.0.192`) cloud-metadata literals and CGNAT (`100.64.0.0/10`).
+
+The file Read/Write/Edit/media tools' canonicalized `isWalletKeyPath` guard is the primary protection; the bash-guard is the best-effort shell net and now prompts on anything it can't reason about. New regression tests pin every bypass. Verified: local suite 494/494.
+
 ## Franklin Agent 3.29.10 — close the 3.29.9 guard bypasses (round-6: adversarial re-review)
 
 An adversarial bypass-hunt of the 3.29.9 security guards found **16 holes in the guards themselves** — the recurring root cause was matching shell text / exact strings instead of canonicalizing. All fixed.
