@@ -103,9 +103,10 @@ const SAFE_COMMANDS = new Set([
   'pwd', 'realpath', 'dirname', 'basename',
   // Text processing (read-only when not redirecting)
   'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'diff', 'comm', 'less', 'more',
-  'wc', 'tee',
-  // NB: `xargs` is intentionally NOT here — it executes an arbitrary wrapped
-  // command (`... | xargs rm -f`), so it must never auto-approve as "safe".
+  'wc',
+  // NB: `xargs` and `tee` are intentionally NOT here — xargs executes an
+  // arbitrary wrapped command (`... | xargs rm -f`) and tee WRITES files
+  // (`echo evil | tee ~/.zshrc`), so neither may auto-approve as "safe".
 ]);
 
 const SAFE_GIT_SUBCOMMANDS = new Set([
@@ -157,10 +158,19 @@ export function classifyBashRisk(command: string): BashRiskResult {
 }
 
 function isSegmentSafe(segment: string): boolean {
-  // Never auto-approve a command that touches the wallet private key — a bare
-  // `cat ~/.blockrun/.solana-session` would dump the key into model context with
-  // no prompt. Force a permission prompt (>= normal) for any key-file reference.
-  if (/\.blockrun[/\\](?:\.session|\.solana-session|\.solana-session-key2|solana-wallet\.json)\b/.test(segment)) {
+  // Never auto-approve a command that touches the wallet key store. Matching the
+  // FILENAME is hopeless — it's trivially obfuscated (`.solana""-session`,
+  // `.\solana-session`, a glob, or an unlisted key file like
+  // solana-wallet-key2.json). So match the DIRECTORY: any reference to
+  // ~/.blockrun forces a prompt. (The file Read/Write/Edit tools have a separate
+  // canonicalized guard; this is the best-effort net for the shell. Over-
+  // prompting on a stray `.blockrun` path is fine — it prompts, never blocks.)
+  if (/\.blockrun/i.test(segment)) {
+    return false;
+  }
+  // Relative reads with no `.blockrun` in the text (e.g. the cwd is the wallet
+  // dir): match the known key/secret basenames broadly (any *wallet*.json/.key).
+  if (/(?<![\w-])(?:\.solana-session(?:-key2)?|\.session|[\w-]*wallet[\w-]*\.(?:json|key))(?![\w-])/i.test(segment)) {
     return false;
   }
 
@@ -201,12 +211,26 @@ function isSegmentSafe(segment: string): boolean {
   // rtk (RTK wrapper — safe, it's a proxy)
   if (baseName === 'rtk') return true;
 
+  // `find` is read-only EXCEPT its action predicates, which execute arbitrary
+  // commands or delete files (`find / -name id_rsa -exec cat {} +`, `find . -delete`).
+  // Same arbitrary-exec hazard that excludes xargs — force a prompt.
+  if (baseName === 'find' && /(?:^|\s)-(?:exec|execdir|ok|okdir|delete|fprint|fprintf|fls)\b/.test(segment)) {
+    return false;
+  }
+
   // Known safe base command
   if (SAFE_COMMANDS.has(baseName)) {
     // sed -i is not read-only
     if (baseName === 'sed' && segment.includes(' -i')) return false;
-    // Output redirection means writing — not safe
-    if (/>\s*[^&|]/.test(segment)) return false;
+    // Output redirection means writing — not safe. Covers `>`, `>>`, `>|`, and
+    // `>&FILE` (a path target), while still allowing numeric fd dups (`2>&1`, `>&2`).
+    if (/>[>|&]?\s*[^\s&|0-9]/.test(segment)) return false;
+    // Coreutils with a hidden write mode the redirect check can't see:
+    if ((baseName === 'sort' || baseName === 'uniq' || baseName === 'tree') && /(?:^|\s)(?:-o(?:[=\s]|$)|--output\b)/.test(segment)) return false;
+    // `uniq IN OUT` overwrites the 2nd positional file.
+    if (baseName === 'uniq' && words.slice(argIdx).filter((w) => w && !w.startsWith('-')).length >= 2) return false;
+    // `yq -i` / `jq` in-place edits.
+    if ((baseName === 'yq' || baseName === 'jq') && /(?:^|\s)(?:-i\b|--in-?place\b)/.test(segment)) return false;
     return true;
   }
 
@@ -220,10 +244,16 @@ function isSegmentSafe(segment: string): boolean {
     if (/^(pr|issue|repo|release|run)\s+(view|list|status|diff|checks|comments)/.test(ghAction)) return true;
     // `gh api` DEFAULTS to GET (read-only) but `-X/--method` and write-body
     // flags (-f/-F/--field/--input) make it a mutation (delete repo, merge PR,
-    // etc.). Only auto-approve a plain GET; anything else must prompt.
+    // etc.). Match the flag in EVERY form gh accepts — `-X POST`, `-XDELETE`,
+    // `--method=POST`, `-ftitle=v`, `-f k=v` — and auto-approve only when none
+    // is present (a plain GET). The space-only regex was bypassable with `=` /
+    // glued forms.
     if (subCmd === 'api') {
-      if (/(?:^|\s)(?:-X|--method)\s+(?!GET\b)\S+/i.test(segment)) return false;
-      if (/(?:^|\s)(?:-f|-F|--field|--raw-field|--input)\b/.test(segment)) return false;
+      if (/(?:^|\s)-X/.test(segment)) return false;                       // -X POST / -XPOST / -XDELETE
+      if (/(?:^|\s)--method\b/i.test(segment)) return false;             // --method POST / --method=POST
+      if (/(?:^|\s)-[fF][A-Za-z0-9_]*=/.test(segment)) return false;     // -ffield=val (glued)
+      if (/(?:^|\s)-[fF](?:\s|$)/.test(segment)) return false;          // -f / -F (spaced value)
+      if (/(?:^|\s)--(?:field|raw-field|input)\b/.test(segment)) return false;
       return true;
     }
     if (subCmd === 'auth' && words[argIdx + 1] === 'status') return true;

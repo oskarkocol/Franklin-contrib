@@ -10219,3 +10219,88 @@ test('secret-redact masks a labeled Solana base58 private key without touching p
   // A bare base58 (no label) is intentionally NOT masked — ambiguous with a signature.
   assert.equal(redactSecrets(key).matches.length, 0);
 });
+
+// ─── Round-6: the bypasses that defeated the round-5 guards (3.29.10) ───────
+test('bash-guard: gh api mutations in equals/glued/spaced forms all prompt', async () => {
+  const { classifyBashRisk } = await import('../dist/agent/bash-guard.js');
+  const safe = (c) => classifyBashRisk(c).level === 'safe';
+  for (const c of [
+    'gh api --method=POST /repos/o/r/merges',   // equals form (was 'safe')
+    'gh api -XDELETE /repos/o/r',               // glued short flag (was 'safe')
+    'gh api -ftitle=pwned /repos/o/r/issues',   // glued field flag (was 'safe')
+    'gh api -f title=x /repos/o/r/issues',      // spaced field
+    'gh api --field body=x /x',
+    'gh api -X POST /x',                         // spaced (already caught in r5)
+  ]) assert.equal(safe(c), false, `${c} must prompt`);
+  assert.equal(safe('gh api /repos/o/r'), true, 'plain GET still auto-safe');
+});
+
+test('bash-guard: find action predicates and tee are not auto-safe', async () => {
+  const { classifyBashRisk } = await import('../dist/agent/bash-guard.js');
+  const safe = (c) => classifyBashRisk(c).level === 'safe';
+  assert.equal(safe('find / -name id_rsa -exec cat {} +'), false);
+  assert.equal(safe('find . -delete'), false);
+  assert.equal(safe('echo evil | tee ~/.zshrc'), false);
+  // find's file-WRITING predicates (-fprint/-fprintf/-fls) must also prompt.
+  assert.equal(safe('find / -name id_rsa -fprint /tmp/leak'), false);
+  assert.equal(safe('find . -fls /tmp/leak'), false);
+  assert.equal(safe('find . -fprintf /tmp/leak %p'), false);
+  assert.equal(safe('find . -name "*.ts"'), true, 'a plain find stays safe');
+  assert.equal(safe('find . -print'), true, 'read-only -print stays safe');
+});
+
+test('bash-guard: wallet-store reads prompt via the directory rule + all obfuscations', async () => {
+  const { classifyBashRisk } = await import('../dist/agent/bash-guard.js');
+  const safe = (c) => classifyBashRisk(c).level === 'safe';
+  for (const c of [
+    'cat ~/.blockrun/.solana-session',
+    'cat ~/.blockrun//.solana-session',          // double slash
+    'cat ~/.blockrun/\\.solana-session',         // backslash-escaped dot
+    'cat ~/.blockrun/.SOLANA-SESSION',           // case variant
+    'cat ~/.blockrun/.solana""-session',         // empty-quote split
+    'cat ~/.blockrun/.\\solana-session',         // backslash before non-special
+    'cat ~/.blockrun/.solana-sessio?',           // glob
+    'cat ~/.blockrun/.solana-{session}',         // brace
+    'cat ~/.blockrun/*',                          // dir glob
+    'cat ~/.blockrun/solana-wallet-key2.json',   // key file NOT in any basename list
+    'cat ~/.blockrun/franklin-stats.json',       // directory rule: any .blockrun read prompts
+    'cat .solana-session',                        // relative key basename (no .blockrun)
+    'cat solana-wallet.json',
+    'head -c 200 .session',
+  ]) assert.equal(safe(c), false, `${c} must prompt`);
+  assert.equal(safe('cat README.md'), true);
+  assert.equal(safe('cat config.session.log'), true, 'a non-key file containing "session" stays safe');
+});
+
+test('bash-guard: coreutil writers (sort -o, uniq OUT, >&FILE, >|, yq -i) prompt', async () => {
+  const { classifyBashRisk } = await import('../dist/agent/bash-guard.js');
+  const safe = (c) => classifyBashRisk(c).level === 'safe';
+  for (const c of [
+    'sort -o ~/.zshrc payload.txt',
+    'sort --output=~/.zshrc payload.txt',
+    'uniq payload.txt ~/.zshrc',
+    'cat payload.txt >&~/.zshrc',
+    'echo x >| ~/.zshrc',
+    'yq -i ".a=1" config.yaml',
+  ]) assert.equal(safe(c), false, `${c} must prompt`);
+  assert.equal(safe('sort file.txt'), true, 'plain sort read stays safe');
+  assert.equal(safe('uniq file.txt'), true, 'single-file uniq read stays safe');
+  assert.equal(safe('echo ok 2>&1'), true, 'numeric fd dup (2>&1) stays safe');
+  assert.equal(safe('jq .name pkg.json'), true, 'plain jq read stays safe');
+});
+
+test('isBlockedSsrfHost: IPv4-mapped IPv6 + trailing-dot blocked; fc/fd public hosts allowed', async () => {
+  const { isBlockedSsrfHost } = await import('../dist/tools/ssrf.js');
+  for (const h of ['[::ffff:127.0.0.1]', '::ffff:7f00:1', '::ffff:a9fe:a9fe', 'localhost.', '127.0.0.1.', 'fc00::1', '[fd00::1]'])
+    assert.equal(isBlockedSsrfHost(h), true, `${h} must be blocked`);
+  for (const h of ['fda.gov', 'fcc.gov', 'fd.io', 'example.com'])
+    assert.equal(isBlockedSsrfHost(h), false, `${h} (public) must be allowed`);
+});
+
+test('isWalletKeyPath is case-insensitive on case-insensitive filesystems', async () => {
+  const { isWalletKeyPath, WALLET_KEY_PATHS } = await import('../dist/tools/sensitive-paths.js');
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    const variant = WALLET_KEY_PATHS[0].replace(/\.solana-session$/, '.SOLANA-SESSION');
+    assert.equal(isWalletKeyPath(variant), true, 'case-variant of the key path must still be protected');
+  }
+});
