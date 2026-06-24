@@ -154,3 +154,30 @@ test('resolveMusicUnitCost prefers the per-track catalog price over the flat PRI
   // Default model / cold catalog: the flat PRICE_USD (already margin-inclusive) holds.
   assert.equal(resolveMusicUnitCost(null), 0.1575);
 });
+
+// ── prefetch stock cost is the REAL spend, not a hardcoded $0.001 on a cache hit ──
+// The prefetch books the stock-price cost by diffing blockrun telemetry around
+// the call: recordFetch fires only on a fresh paid fetch, never on a 5-min cache
+// hit, so a repeat ticker within the window books $0 instead of over-reporting.
+test('blockrun spend diff counts a fresh paid fetch but $0 on a cache hit (no over-report)', async () => {
+  const { recordFetch, blockrunSpendUsdToday, resetTelemetry } =
+    await import('../dist/trading/providers/telemetry.js');
+  const { cached, clearCache } = await import('../dist/trading/providers/blockrun/client.js');
+  resetTelemetry();
+  clearCache();
+  let paidCalls = 0;
+  // Mirror the paid stock-price fetcher: a cache MISS runs fn (records $0.001);
+  // a cache HIT returns the stored value without running fn again.
+  const fetchPaid = async () => {
+    paidCalls++;
+    recordFetch({ provider: 'blockrun', endpoint: '/v1/stocks/us/price', ok: true, latencyMs: 5, costUsd: 0.001 });
+    return { price: 100 };
+  };
+  let before = blockrunSpendUsdToday();
+  await cached('stock:us:AAPL', 60_000, fetchPaid);
+  assert.equal(Math.max(0, blockrunSpendUsdToday() - before), 0.001, 'fresh fetch books the real $0.001');
+  before = blockrunSpendUsdToday();
+  await cached('stock:us:AAPL', 60_000, fetchPaid);
+  assert.equal(Math.max(0, blockrunSpendUsdToday() - before), 0, 'cache hit books $0 — no phantom spend');
+  assert.equal(paidCalls, 1, 'the paid fetch ran exactly once');
+});

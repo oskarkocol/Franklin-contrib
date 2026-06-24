@@ -165,6 +165,16 @@ export function snapshot(): TelemetrySnapshot {
   };
 }
 
+/**
+ * Real BlockRun spend recorded so far today (USD). `recordFetch` only adds to
+ * this on an actual paid fetch — a short-TTL cache hit records nothing — so a
+ * caller can measure the true cost of a single paid call by diffing this around
+ * the call (delta 0 on a cache hit, $0.001 on a fresh stock-price fetch).
+ */
+export function blockrunSpendUsdToday(): number {
+  return rolls.blockrun.spendUsdToday;
+}
+
 /** Test helper: reset all counters. Do not call in production code paths. */
 export function resetTelemetry(): void {
   rolls.coingecko = newRoll();

@@ -30,6 +30,7 @@ import type { ModelClient } from './llm.js';
 import type { Dialogue } from './types.js';
 import type { MarketCode } from '../trading/providers/standard-models.js';
 import { getStockPrice, getPrice } from '../trading/data.js';
+import { blockrunSpendUsdToday } from '../trading/providers/telemetry.js';
 
 // ─── Intent types ────────────────────────────────────────────────────────
 
@@ -93,16 +94,24 @@ export async function prefetchForIntent(
     if (intent.assetClass === 'stock') {
       const market: MarketCode = intent.market || 'us';
       tasks.push(
-        getStockPrice(intent.symbol, market).then((r) => {
+        (async () => {
+          // The stock price is a paid x402 call ($0.001) BUT cached for 5 min,
+          // so a repeat ticker within the window pays nothing. Book the REAL
+          // spend by diffing telemetry around the call (recordFetch fires only
+          // on a fresh paid fetch, never a cache hit) instead of hardcoding
+          // $0.001 — otherwise a cached hit over-reports the prefetch cost.
+          const before = blockrunSpendUsdToday();
+          const r = await getStockPrice(intent.symbol, market);
+          const paidUsd = Math.max(0, blockrunSpendUsdToday() - before);
           if (typeof r === 'string') {
-            return { ok: false, line: `- ${intent.symbol} (${market}): lookup failed — ${r.slice(0, 80)}`, cost: 0 };
+            return { ok: false, line: `- ${intent.symbol} (${market}): lookup failed — ${r.slice(0, 80)}`, cost: paidUsd };
           }
           return {
             ok: true,
             line: `- ${intent.symbol} (${market}) live price: ${formatUsd(r.price)} (BlockRun Gateway / Pyth)`,
-            cost: 0.001,
+            cost: paidUsd,
           };
-        }),
+        })(),
       );
     } else {
       // crypto
