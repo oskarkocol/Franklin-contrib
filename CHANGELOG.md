@@ -1,5 +1,14 @@
 # Changelog
 
+## Franklin Agent 3.29.16 — startup framing + dead-code cleanup
+
+Small polish release, no behavior change to the agent loop or payment surface.
+
+- **No paid/free warning at startup.** The launch banner previously flagged the active model as "paid — charges from your wallet per call" with a nudge to `/model free`. Removed. Franklin is the agent with a wallet — spending is the point, not something to warn against. Startup now just shows `Model: <id>`.
+- **Dropped a dead `MODEL_PRICING` reference.** `stats/insights.ts` imported `MODEL_PRICING` only to `void` it for the unused-import linter; the import and placeholder are gone. `MODEL_PRICING` itself stays in active use across `pricing.ts`, `router/selector.ts`, and `router/index.ts`.
+
+Verified: local suite 510/510, `tsc --noEmit` clean.
+
 ## Franklin Agent 3.29.15 — spend-accounting integrity + prompt-injection containment (round-10 broad audit)
 
 The bash-guard has converged — a fresh exotic sweep found nothing new. So round-10 widened the lens to the **non-bash** attack surface (spend/budget enforcement, the payment proxy, prompt-injection framing, persistence) and found higher-impact issues a narrow bash hunt never would. 5 confirmed; the 4 clean ones are fixed here.
