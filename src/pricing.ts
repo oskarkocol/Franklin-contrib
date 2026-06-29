@@ -71,10 +71,10 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'xai/grok-3': { input: 3.0, output: 15.0 },
   'xai/grok-4.3': { input: 1.5, output: 4.0 },        // public flagship 2026-06-04, OpenRouter resale
   'xai/grok-build-0.1': { input: 1.5, output: 3.0 },  // agentic coding, OpenRouter resale
-  // DeepSeek (gateway re-aliased these to V4 Flash on 2026-05-03; price
-  // dropped from $0.28/$0.42 to $0.20/$0.40, context bumped 128K→1M).
-  'deepseek/deepseek-chat': { input: 0.20, output: 0.40 },
-  'deepseek/deepseek-reasoner': { input: 0.20, output: 0.40 },
+  // DeepSeek V4 Flash (gateway re-aliased chat/reasoner on 2026-05-03; list
+  // price refreshed 2026-06-29 via narev: $0.14/$0.28 per 1M, 1M ctx).
+  'deepseek/deepseek-chat': { input: 0.14, output: 0.28 },
+  'deepseek/deepseek-reasoner': { input: 0.14, output: 0.28 },
   // V4 Pro (1.6T MoE / 49B active, 1M ctx, 65K out). 75% launch promo
   // through 2026-05-31 — list is $2.00/$4.00, promo is $0.50/$1.00.
   'deepseek/deepseek-v4-pro': { input: 0.435, output: 0.87 }, // 75% promo became permanent list after 2026-05-31
