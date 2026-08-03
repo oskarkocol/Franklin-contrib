@@ -60,7 +60,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'openai/gpt-5-mini': { input: 0.25, output: 2.0 },
   'openai/gpt-4.1-mini': { input: 0.4, output: 1.6 },
   'openai/gpt-5.4-mini': { input: 0.75, output: 4.5 },
-  'openai/gpt-5.6-luna': { input: 1.0, output: 6.0 }, // cost-efficient GPT-5.6 tier, 1M ctx
+  'openai/gpt-5.6-luna': { input: 0.1, output: 0.6 }, // refreshed 2026-08-03 via narev public pricing
   'openai/gpt-5.2': { input: 1.75, output: 14.0 },
   'openai/gpt-5.3': { input: 1.75, output: 14.0 },
   'openai/gpt-5.3-codex': { input: 1.75, output: 14.0 },
@@ -68,7 +68,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'openai/o3': { input: 2.0, output: 8.0 },
   'openai/gpt-4o': { input: 2.5, output: 10.0 },
   'openai/gpt-5.4': { input: 2.5, output: 15.0 },
-  'openai/gpt-5.6-terra': { input: 2.5, output: 15.0 }, // balanced GPT-5.6 tier, 1M ctx
+  'openai/gpt-5.6-terra': { input: 1.0, output: 6.0 }, // refreshed 2026-08-03 via narev public pricing
   'openai/o1-mini': { input: 1.1, output: 4.4 },
   'openai/o3-mini': { input: 1.1, output: 4.4 },
   'openai/o4-mini': { input: 1.1, output: 4.4 },
