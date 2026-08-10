@@ -45,7 +45,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'anthropic/claude-opus-4.7': { input: 5.0, output: 25.0 },
   'anthropic/claude-opus-4.6': { input: 5.0, output: 25.0 },
   'anthropic/claude-opus-4.5': { input: 5.0, output: 25.0 },
-  'anthropic/claude-sonnet-5': { input: 3.0, output: 15.0 }, // near-Opus at Sonnet cost, 1M ctx
+  'anthropic/claude-sonnet-5': { input: 2.0, output: 10.0 }, // near-Opus at Sonnet cost, 1M ctx
   'anthropic/claude-sonnet-4.6': { input: 3.0, output: 15.0 },
   'anthropic/claude-sonnet-4.5': { input: 3.0, output: 15.0 },
   'anthropic/claude-haiku-4.5': { input: 1.0, output: 5.0 },
