@@ -78,7 +78,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'openai/o4-mini': { input: 1.1, output: 4.4 },
   'openai/o1': { input: 15.0, output: 60.0 },
   'openai/gpt-5.5': { input: 5.0, output: 30.0 },
-  'openai/gpt-5.6-sol': { input: 5.0, output: 30.0 }, // GPT-5.6 flagship, deepest reasoning, 1M ctx
+  'openai/gpt-5.6-sol': { input: 2.5, output: 15.0 }, // GPT-5.6 flagship, deepest reasoning, 1M ctx
   // GPT-5.6 Pro tiers + 5.5 Pro + chat-latest, added upstream 2026-08-03
   // (base #329) — priced from the live catalog 2026-08-12.
   'openai/gpt-5.6-luna-pro': { input: 0.1, output: 0.6 },
