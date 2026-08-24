@@ -110,9 +110,9 @@ export const MODEL_PRICING: Record<string, { input: number; output: number; perC
   'xai/grok-3-mini': { input: 0.3, output: 0.5 },
   'xai/grok-2-vision': { input: 2.0, output: 10.0 },
   'xai/grok-3': { input: 3.0, output: 15.0 },
-  'xai/grok-4.3': { input: 1.5, output: 4.0 },        // 1M ctx; demoted from flagship 2026-07-14
-  'xai/grok-4.5': { input: 2.5, output: 9.0 },        // xAI flagship — 500K ctx (note: less than 4.3's 1M)
-  'xai/grok-build-0.1': { input: 1.5, output: 3.0 },  // agentic coding, OpenRouter resale
+  'xai/grok-4.3': { input: 1.25, output: 2.5 },        // 1M ctx; demoted from flagship 2026-07-14
+  'xai/grok-4.5': { input: 2.0, output: 6.0 },        // xAI flagship — 500K ctx (note: less than 4.3's 1M)
+  'xai/grok-build-0.1': { input: 1.0, output: 2.0 },  // agentic coding, OpenRouter resale
   // DeepSeek (gateway re-aliased these to V4 Flash on 2026-05-03; price cut
   // again upstream 2026-08-07 to $0.14/$0.28 — mirrored here 2026-08-12).
   'deepseek/deepseek-chat': { input: 0.14, output: 0.28 },
