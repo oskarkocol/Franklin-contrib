@@ -1,5 +1,107 @@
 # Changelog
 
+## Franklin Agent 3.49.29 — Modal: no signing without a price, the real charge in the result, terminate refunds nothing
+
+Upgrade if you use Modal sandboxes. Follow-ups to 3.49.28.
+
+- **ModalTerminate no longer implies it saves money.** Its tool text said Modal
+  bills GPU time until the sandbox is terminated. ModalCreate charges the whole
+  requested `timeout` upfront and terminating early refunds nothing, so a model
+  reading the old text could pick a 24 h lifetime expecting to stop the meter
+  early. It now says terminate stops the sandbox and frees resources, refunds
+  nothing, and that the timeout should be chosen at create. It also no longer
+  claims that sandboxes are terminated automatically at session end.
+- **`gpu: ""` cannot bypass the quote check.** An empty gpu priced as nothing:
+  the confirm dialog crashed, and with no dialog the call went out with no
+  wallet reservation and no quote ceiling. A blank gpu now means CPU, and any
+  other value must name a GPU tier. Every Modal call now refuses to sign when
+  Franklin cannot compute the expected price, instead of signing whatever the
+  gateway asks.
+- **The "charged:" line shows what was paid.** It showed Franklin's list price,
+  which is the Solana rate; the Base gateway's hourly rates are lower (A100 for
+  600 s: $0.667667 on Base, shown as $1.17). Franklin now reports the gateway's
+  stated charge, or else the exact quote it signed, and labels the list price
+  as an estimate when neither is available. `franklin stats` records the same
+  figure.
+- **Exec, status and terminate reserve what they may sign**: the price plus the
+  Base $0.001 fee, as create already did.
+- **"flat floor" wording.** A large or long create whose hourly price is below
+  the flat rate now says it is charged the flat floor, instead of quoting the
+  flat-rate conditions it does not meet.
+- **A refused ModalTerminate is an error.** When the quote check refuses a
+  terminate, or the gateway answers 5xx, the result is an error and the
+  sandbox stays in the session's list instead of being reported as done.
+
+## Franklin Agent 3.49.28 — Modal sandboxes can live up to 24 hours, and Franklin never signs more than it expected
+
+Upgrade if you use Modal sandboxes.
+
+- **Lifetimes up to 24 h.** ModalCreate refused any `timeout` above 300 s and told
+  the model the gateway would reject it. The gateways have accepted up to 86400 s
+  (24 h) for a while (probed 2026-11-13: 86400 is quoted, 86401 is a 400 on
+  sol.blockrun.ai and blockrun.ai). The client now accepts 10 to 86400 s and
+  still defaults to 300 s.
+- **`timeout` is explained as the billed lifetime.** A create with timeout <= 300 s,
+  cpu <= 1 and memory <= 1024 MB pays the flat rate. Anything else pays the hourly
+  rate for the full requested lifetime, upfront, never below the flat rate, with
+  no refund on early terminate: 600 s on an A100 is $1.17, 24 h on an H100 is $216.
+  The tool text, the confirm dialog and the result now all say so.
+- **Correct hourly price for CPU sandboxes.** A CPU create above 300 s is billed at
+  $0.25/h. Franklin priced it at the flat $0.01, so a 24 h CPU sandbox would have
+  reserved $0.01 against a $6.00 charge.
+- **No signing above the expected price.** Before it signs, every Modal call now
+  checks the 402 quote against the price Franklin computed for the request (plus
+  the Base gateway's $0.001 transaction fee). A higher or unreadable quote is
+  refused with `quote_exceeds_expected` and nothing is signed or sent. The wallet
+  reservation holds that same ceiling.
+
+## Franklin Agent 3.49.27 — Solana payments sign on the gateway's quoted blockhash
+
+Requires `@blockrun/llm` 3.26.5 (was 3.19.1 in the lockfile). When a Solana 402
+quotes `extra.recentBlockhash`, every paid tool now signs on that blockhash instead
+of one the SDK fetched itself. It is a `finalized` hash every facilitator verifier
+has already seen, and the Solana gateway applies its sandbox-create payment-window
+check only to payments signed on the hash it quoted. All 18 Franklin call sites
+already pass the 402's `extra` through, so no Franklin code changes. With no valid
+quote the payment is built exactly as before.
+
+## Franklin Agent 3.49.26 — `franklin serve` needs a token, and the panel token stays off the command line
+
+Security fix. Upgrade if you run `franklin serve` or `franklin panel`. Thanks to
+orshih6 and Abhinav Kumar (EmberTail) for the reports (GHSA-wfcc-mrqp-668m,
+GHSA-25q2-mmr5-c394).
+
+- **`franklin serve` needs a token.** Until now the standalone server accepted
+  any socket that reached 127.0.0.1 unless `FRANKLIN_SERVE_TOKEN` was set, and
+  the CLI never set it. Any other account on the machine, any local program,
+  and any page served from a local dev server could run the agent with your
+  wallet and tools, and answer its own Bash, trade-plan and payment prompts.
+  Serve now creates a token at every start and refuses sockets without it
+  (401), and `/file` refuses unsigned paths. The token is written only to
+  `~/.blockrun/serve-url` (owner-only), which `franklin panel` already reads,
+  so the Agents tab needs no setup. With `FRANKLIN_SERVE_DISCOVERY=off`, the
+  connect URL is printed to the terminal that started serve. The Desktop app
+  already used a token and is unchanged.
+- **An approval is answered only where it was asked.** A tool or payment prompt
+  can be approved only by the connection it was sent to. Holding its id is no
+  longer enough.
+- **Agent commands no longer inherit the serve token.** `FRANKLIN_SERVE_TOKEN`
+  and `FRANKLIN_SERVE_FILE_TOKEN` are removed from the environment of Bash,
+  hooks, MCP servers and background tasks, so a command the model runs cannot
+  connect and approve its own prompts.
+- **The panel token stays off the command line.** `franklin panel` and
+  `franklin panel --open` passed the token-bearing link to `open`,
+  `xdg-open` or `start` as an argument, where other accounts can read it (on
+  Linux, `/proc/<pid>/cmdline`). That token unlocks the wallet key. The browser
+  is now pointed at an owner-only page, `~/.blockrun/panel-open.html`, that
+  forwards to the panel. If your `.html` files open in an editor, use the link
+  printed in the terminal.
+- **The Phone tab escapes gateway text.** Phone numbers, chain names and error
+  messages are escaped before they are shown, so a crafted gateway reply cannot
+  run script in the panel.
+- Scripts that connect to `franklin serve` themselves must now add
+  `?token=` from `~/.blockrun/serve-url`.
+
 ## Franklin Agent 3.49.25 — router-core 273c2af (router audit)
 
 Bump @blockrun/router-core to 273c2af. Auto routing now makes the same decisions
